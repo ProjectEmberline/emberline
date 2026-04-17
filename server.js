@@ -20,6 +20,7 @@ const WS      = require('ws');
 const path    = require('path');
 const fs      = require('fs');
 const crypto  = require('crypto');
+const { execSync } = require('child_process');
 
 const PORT = process.env.PORT || 3000;
 
@@ -723,6 +724,67 @@ app.get('/terms', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Build version — commit hash footer
+// ─────────────────────────────────────────────────────────────────────────────
+// Resolves which source version is currently running so the client can show
+// a commit hash footer linked to the GitHub tree. Three fallbacks:
+//   1. BUILD_VERSION file written by the pre-deploy script (production path)
+//   2. git rev-parse HEAD if a .git directory exists (local dev path)
+//   3. the literal string "dev" (self-hosted zip downloads, CI sandboxes)
+// In the "dev" case the footer renders without the hash — there is no
+// specific commit to verify against, so showing "build dev" would be noise.
+
+const BUILD_VERSION = (() => {
+  const buildFile = path.join(__dirname, 'BUILD_VERSION');
+  try {
+    const v = fs.readFileSync(buildFile, 'utf8').trim();
+    if (v && /^[0-9a-f]{7,40}$/.test(v)) return v;
+  } catch {} // file missing — try git
+
+  try {
+    const v = execSync('git rev-parse HEAD', {
+      cwd: __dirname,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+    }).toString().trim();
+    if (/^[0-9a-f]{40}$/.test(v)) return v;
+  } catch {} // not a git repo, or git not installed
+
+  return 'dev';
+})();
+
+const BUILD_VERSION_SHORT = BUILD_VERSION === 'dev' ? 'dev' : BUILD_VERSION.slice(0, 7);
+
+// Footer HTML fragment: either a linked short-hash or empty (hidden with its separator).
+// Kept as a pre-rendered fragment so index.html stays clean — one placeholder, one replace.
+const GITHUB_REPO_URL    = 'https://github.com/ProjectEmberline/emberline';
+const BUILD_FOOTER_FRAGMENT = BUILD_VERSION === 'dev'
+  ? ''
+  : `<a href="${GITHUB_REPO_URL}/tree/${BUILD_VERSION}" target="_blank" rel="noopener noreferrer">build ${BUILD_VERSION_SHORT}</a> &nbsp;·&nbsp; `;
+
+// Index template — inject placeholder at startup.
+// This route MUST come before express.static so the static handler doesn't
+// serve the raw template with unreplaced placeholders.
+const INDEX_SOURCE = (() => {
+  try {
+    return fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8')
+      .replace(/__BUILD_FOOTER__/g, BUILD_FOOTER_FRAGMENT);
+  } catch (err) {
+    console.error('[index] failed to read index.html template:', err.message);
+    return '<!doctype html><title>Emberline</title><p>Server misconfigured.</p>';
+  }
+})();
+
+app.get('/', (req, res) => {
+  res.type('text/html; charset=utf-8');
+  res.send(INDEX_SOURCE);
+});
+app.get('/index.html', (req, res) => {
+  res.type('text/html; charset=utf-8');
+  res.send(INDEX_SOURCE);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // REST: /sw.js  —  content-hashed cache versioning
 // ─────────────────────────────────────────────────────────────────────────────
 // The service worker needs a CACHE_NAME that changes when — and only when —
@@ -816,4 +878,5 @@ server.listen(PORT, () => {
   console.log(`Reports → ${path.join(__dirname, 'reports.log')}`);
   console.log(`Abuse   → ${path.join(__dirname, 'abuse.log')}`);
   console.log(`SW      → cache=${CACHE_VERSION} files=${SHELL_LIST.length}`);
+  console.log(`BUILD   → ${BUILD_VERSION_SHORT}${BUILD_VERSION === 'dev' ? '' : ` (${BUILD_VERSION})`}`);
 });
