@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head><title>Emberline Icon Generator</title></head>
+<body style="font-family:sans-serif;padding:2rem;background:#111;color:#eee;">
+<h2>Emberline Icon Generator</h2>
+<p>Click each button to download the icon, then place both files in your <code>icons/</code> folder.</p>
+<br>
+<canvas id="c" style="display:none;"></canvas>
+<button onclick="gen(192)">Download icon-192.png</button>
+<button onclick="gen(512)">Download icon-512.png</button>
+<script>
+function gen(s) {
+  const c = document.getElementById('c');
+  c.width = s;
+  c.height = s;
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = '#1c1713';
+  ctx.fillRect(0, 0, s, s);
+
+  const cx = s / 2;
+  const scale = s / 120;
+
+  // Outer flame
+  ctx.beginPath();
+  ctx.moveTo(cx, 28 * scale);
+  ctx.quadraticCurveTo(42 * scale, 50 * scale, 42 * scale, 68 * scale);
+  ctx.quadraticCurveTo(42 * scale, 82 * scale, 60 * scale, 88 * scale);
+  ctx.quadraticCurveTo(78 * scale, 82 * scale, 78 * scale, 68 * scale);
+  ctx.quadraticCurveTo(78 * scale, 50 * scale, cx, 28 * scale);
+  ctx.closePath();
+  ctx.fillStyle = '#c87941';
+  ctx.fill();
+
+  // Middle flame
+  ctx.beginPath();
+  ctx.moveTo(cx, 52 * scale);
+  ctx.quadraticCurveTo(52 * scale, 62 * scale, 52 * scale, 70 * scale);
+  ctx.quadraticCurveTo(52 * scale, 78 * scale, 60 * scale, 80 * scale);
+  ctx.quadraticCurveTo(68 * scale, 78 * scale, 68 * scale, 70 * scale);
+  ctx.quadraticCurveTo(68 * scale, 62 * scale, cx, 52 * scale);
+  ctx.closePath();
+  ctx.fillStyle = '#e8a060';
+  ctx.fill();
+
+  // Inner flame core
+  ctx.beginPath();
+  ctx.moveTo(cx, 66 * scale);
+  ctx.quadraticCurveTo(56 * scale, 71 * scale, 56 * scale, 74 * scale);
+  ctx.quadraticCurveTo(56 * scale, 77.5 * scale, 60 * scale, 78.5 * scale);
+  ctx.quadraticCurveTo(64 * scale, 77.5 * scale, 64 * scale, 74 * scale);
+  ctx.quadraticCurveTo(64 * scale, 71 * scale, cx, 66 * scale);
+  ctx.closePath();
+  ctx.fillStyle = '#f0c870';
+  ctx.fill();
+
+  const a = document.createElement('a');
+  a.download = 'icon-' + s + '.png';
+  a.href = c.toDataURL('image/png');
+  a.click();
+}
+</script>
+</body>
+</html>

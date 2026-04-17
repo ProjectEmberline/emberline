@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emberline — Find your match</title>
+<link href="/fonts/fonts.css" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ── Dark mode (default) ───────────────────────────────────────────────── */
+  :root, [data-theme="dark"] {
+    --ink:             #e8ddd0;
+    --paper:           #1c1713;
+    --card:            #1c1713;
+    --chat-bg:         #1c1713;
+    --chat-input-bg:   #2a2420;
+    --accent:          #c87941;
+    --accent-hover:    #b06a34;
+    --accent-light:    #3a2415;
+    --muted:           #7a6e65;
+    --border:          #2e2620;
+    --border-input:    #3a3028;
+    --border-focus:    #5a4a3a;
+    --ghost-color:     #4a4038;
+    --ghost-hover-bg:  transparent;
+    --ghost-hover-fg:  #a89070;
+    --card-shadow:     none;
+    --msg-me-bg:       #2a2420;
+    --msg-me-fg:       #c4a882;
+    --msg-me-border:   transparent;
+    --msg-them-bg:     #c87941;
+    --msg-them-fg:     #1c1713;
+    --report-bg:       #231e19;
+    --report-char-fg:  #4a4038;
+    --footer-fg:       #3a3028;
+    --waiting-label:   #3e3028;
+    --btn-disabled-fg: #4a4038;
+    --btn-disabled-bd: transparent;
+    --select-bg:       #231e19;
+  }
+
+  /* ── Light mode (parchment) ────────────────────────────────────────────── */
+  [data-theme="light"] {
+    --ink:             #3a2e1e;
+    --paper:           #f5f0e8;
+    --card:            #f5f0e8;
+    --chat-bg:         #f5f0e8;
+    --chat-input-bg:   #ede8de;
+    --accent:          #8b5e2a;
+    --accent-hover:    #6e4a1e;
+    --accent-light:    #e0d0b8;
+    --muted:           #8a7a64;
+    --border:          #d4c8b0;
+    --border-input:    #c9bca4;
+    --border-focus:    #8b5e2a;
+    --ghost-color:     #b8a890;
+    --ghost-hover-bg:  transparent;
+    --ghost-hover-fg:  #5a3e20;
+    --card-shadow:     none;
+    --msg-me-bg:       #e8e0d0;
+    --msg-me-fg:       #3a2e1e;
+    --msg-me-border:   transparent;
+    --msg-them-bg:     #8b5e2a;
+    --msg-them-fg:     #f5f0e8;
+    --report-bg:       #ede8de;
+    --report-char-fg:  #a8967a;
+    --footer-fg:       #c9bca4;
+    --waiting-label:   #b8a890;
+    --btn-disabled-fg: #c9bca4;
+    --btn-disabled-bd: transparent;
+    --select-bg:       #ede8de;
+  }
+
+  html { transition: background 0.25s, color 0.25s; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    height: 100dvh;
+    max-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: background 0.25s, color 0.25s;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  header {
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .logo {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 1.35rem;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .tagline {
+    font-size: 0.6875rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  @media (max-width: 480px), (max-height: 600px) {
+    .tagline { display: none; }
+  }
+
+  #btn-theme {
+    background: transparent;
+    border: 1px solid var(--border-input);
+    color: var(--muted);
+    border-radius: 999px;
+    width: 32px;
+    height: 32px;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.2s, color 0.2s;
+    margin-left: 16px;
+  }
+  #btn-theme:hover { border-color: var(--accent); color: var(--accent); }
+
+  main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    padding: 24px;
+    overflow: hidden;
+  }
+
+  .card {
+    background: var(--card);
+    border: none;
+    border-radius: 0;
+    padding: 32px;
+    width: 100%;
+    max-width: 520px;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    transition: background 0.25s;
+  }
+  body.is-matched main { padding: 0; }
+  body.is-matched .card {
+    max-width: 100%;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .chat-column {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 0 24px;
+    box-sizing: border-box;
+  }
+  .chat-column-grow {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 0 24px;
+    box-sizing: border-box;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  #section-matched {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    flex: 1;
+    min-height: 0;
+  }
+  body.is-matched #section-matched {
+    display: flex;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .card h1 {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 1.75rem;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .card h1 em {
+    color: var(--accent);
+    font-style: normal;
+  }
+
+  .card p.sub {
+    color: var(--muted);
+    font-size: 0.875rem;
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+
+  .hint {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 20px;
+    font-style: italic;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: var(--paper);
+    border: none;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.15s;
+  }
+  .btn:hover {
+    background: var(--accent-hover);
+  }
+  .btn:active { transform: scale(0.99); }
+  .btn:disabled {
+    background: transparent !important;
+    color: var(--btn-disabled-fg) !important;
+    border: 1px solid var(--btn-disabled-bd) !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--ghost-color);
+    border: none;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0.02em;
+  }
+  .btn-ghost:hover { background: transparent; color: var(--ghost-hover-fg); }
+
+  .btn-next {
+    background: transparent;
+    color: var(--ghost-color);
+    border: none;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    text-transform: none;
+  }
+  .btn-next:hover { background: transparent; color: var(--accent); }
+
+  .waiting {
+    text-align: center;
+    padding: 24px 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ember-sparks {
+    width: 60px;
+    height: 70px;
+    margin: 0 auto 24px;
+    position: relative;
+  }
+  .spark { position: absolute; border-radius: 50%; bottom: 0; }
+
+  @keyframes spark-rise1 { 0%{transform:translateY(0) translateX(0);opacity:.9} 100%{transform:translateY(-50px) translateX(3px);opacity:0} }
+  @keyframes spark-rise2 { 0%{transform:translateY(0) translateX(0);opacity:.7} 100%{transform:translateY(-44px) translateX(-5px);opacity:0} }
+  @keyframes spark-rise3 { 0%{transform:translateY(0) translateX(0);opacity:.8} 100%{transform:translateY(-56px) translateX(4px);opacity:0} }
+  @keyframes spark-rise4 { 0%{transform:translateY(0) translateX(0);opacity:.6} 100%{transform:translateY(-38px) translateX(-3px);opacity:0} }
+  @keyframes spark-rise5 { 0%{transform:translateY(0) translateX(0);opacity:.9} 100%{transform:translateY(-48px) translateX(6px);opacity:0} }
+
+  .waiting h2 {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 1.75rem;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .waiting p { color: var(--muted); font-size: 0.875rem; margin-bottom: 24px; }
+
+  .keyword-badge {
+    display: inline-block;
+    background: var(--accent-light);
+    color: var(--accent);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    margin-bottom: 24px;
+  }
+
+  .waiting-count { font-size: 0.75rem; color: var(--muted); margin-top: 12px; font-style: italic; }
+
+  .chat-box {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    background: var(--chat-bg);
+    border: none;
+    border-radius: 0;
+    padding: 8px 0;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    transition: background 0.25s;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .chat-box::-webkit-scrollbar { display: none; }
+
+  .msg {
+    max-width: 85%;
+    font-size: 1.000rem;
+    line-height: 1.6;
+    padding: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: pre-wrap;
+    min-width: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    margin-top: 16px;
+  }
+  .msg::-webkit-scrollbar { display: none; }
+  .msg:first-child { margin-top: 0; }
+  .msg.me + .msg.me,
+  .msg.them + .msg.them { margin-top: 4px; }
+  .msg.me {
+    background: transparent;
+    color: var(--msg-me-fg);
+    align-self: flex-start;
+    text-align: left;
+    border: none;
+    border-radius: 0;
+  }
+  .msg.them {
+    background: transparent;
+    color: var(--accent);
+    align-self: flex-start;
+    border: none;
+    border-radius: 0;
+  }
+  .msg.system {
+    background: transparent;
+    color: var(--muted);
+    font-family: 'Unbounded', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    align-self: center;
+    text-align: center;
+    max-width: 100%;
+    padding: 0;
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+
+  @keyframes typing-fade { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.8; } }
+  .typing-indicator {
+    font-size: 0.8125rem;
+    color: var(--muted);
+    font-style: italic;
+    animation: typing-fade 2s ease-in-out infinite;
+    padding: 0;
+    margin-top: 16px;
+  }
+
+  .chat-input-row { display: flex; gap: 8px; align-items: center; }
+
+  .chat-input-row textarea {
+    flex: 1;
+    padding: 6px 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.900rem;
+    color: var(--ink);
+    outline: none;
+    resize: none;
+    overflow: hidden;
+    line-height: 1.6;
+    min-height: 0;
+    max-height: 200px;
+    transition: border-color 0.2s;
+  }
+  .chat-input-row textarea:focus { border-color: var(--accent); }
+  .chat-input-row textarea.at-height-limit {
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    border-color: var(--accent);
+  }
+  .chat-input-row textarea.at-height-limit::-webkit-scrollbar { display: none; }
+  .chat-input-row textarea::placeholder { color: var(--muted); }
+
+  .chat-char-count {
+    font-size: 0.6875rem;
+    color: var(--muted);
+    opacity: 0;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .chat-char-count.visible { opacity: 1; }
+  .chat-char-count.urgent  { color: var(--accent); }
+
+  #btn-send {
+    padding: 6px 0;
+    background: transparent;
+    color: var(--accent);
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 1.000rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color 0.2s;
+    line-height: 1.6;
+  }
+  #btn-send:hover {
+    color: var(--accent-hover);
+  }
+
+  .tag-field {
+    min-height: 48px;
+    border: none;
+    border-radius: 16px;
+    background: var(--chat-input-bg);
+    padding: 8px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 4px;
+    cursor: text;
+    margin-bottom: 8px;
+    transition: background 0.25s;
+  }
+  .tag-field:focus-within { background: var(--chat-input-bg); }
+  .tag-field input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: 'Inter', sans-serif;
+    font-size: 1.000rem;
+    color: var(--ink);
+    flex: 1;
+    min-width: 120px;
+    padding: 4px 0;
+  }
+  .tag-field input::placeholder { color: var(--muted); font-style: italic; }
+
+  .tag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--accent-light);
+    color: var(--accent);
+    padding: 4px 10px 4px 12px;
+    border-radius: 999px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+    margin: 2px 4px 2px 0;
+  }
+  .tag-pill button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 0.875rem;
+    line-height: 1;
+    padding: 0;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+    width: auto;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+  .tag-pill button:hover { opacity: 1; background: none; }
+
+  #section-entry, #section-waiting, #section-matched { display: none; }
+  #section-entry {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    justify-content: center;
+    animation: fadeIn 0.05s ease;
+  }
+  #section-waiting {
+    flex-direction: column;
+    flex: 1;
+    position: relative;
+    animation: fadeIn 0.05s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .report-title {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
+
+  footer {
+    text-align: center;
+    padding: 12px 24px;
+    font-size: 0.6875rem;
+    color: var(--footer-fg);
+    transition: color 0.25s;
+  }
+  footer a { color: var(--footer-fg); text-decoration: underline; text-underline-offset: 3px; }
+
+  @media (max-width: 480px) {
+    .card { padding: 24px 20px; }
+    .card h1 { font-size: 1.5rem; }
+    .waiting h2 { font-size: 1.5rem; }
+    .msg { max-width: 95%; }
+    main { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span style="color:var(--accent);">ember</span><span style="color:var(--ink);">line</span></div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div class="tagline" id="user-count">— embers are sparkling</div>
+    <button id="btn-theme" title="Toggle light / dark mode" aria-label="Toggle theme">☀</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+
+    <!-- ENTRY -->
+    <div id="section-entry">
+      <h1>Find someone who <em>gets it.</em></h1>
+      <p class="sub">Add up to 10 words that resonate with you. We'll match you with a stranger who shares at least one. No accounts, no ads, no tracking, no message storage, no IP logs — just a fleeting moment, end-to-end encrypted.</p>
+      <div class="tag-field" id="tag-field">
+        <div id="tag-list"></div>
+        <input type="text" id="keyword-input" placeholder="type a word, press Enter…" maxlength="20" autocomplete="off" />
+      </div>
+      <p class="hint">Try: "midnight", "coffee", "nostalgia", "rust", "volta"</p>
+      <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;" aria-hidden="true">
+
+      <button class="btn" id="btn-enter" disabled>Find my match →</button>
+    </div>
+
+    <!-- WAITING -->
+    <div id="section-waiting">
+      <div class="waiting">
+        <div class="ember-sparks">
+          <div class="spark" style="width:4px;height:4px;background:#c87941;left:28px;animation:spark-rise1 2.0s ease-out infinite;"></div>
+          <div class="spark" style="width:3px;height:3px;background:#e8a060;left:36px;animation:spark-rise2 2.4s ease-out infinite .7s;"></div>
+          <div class="spark" style="width:5px;height:5px;background:#c87941;left:20px;animation:spark-rise3 2.8s ease-out infinite 1.3s;"></div>
+          <div class="spark" style="width:2px;height:2px;background:#f0b870;left:32px;animation:spark-rise4 1.8s ease-out infinite .4s;"></div>
+          <div class="spark" style="width:3px;height:3px;background:#a86030;left:24px;animation:spark-rise5 2.2s ease-out infinite 1.8s;"></div>
+          <div class="spark" style="width:2px;height:2px;background:#e8a060;left:40px;animation:spark-rise1 2.6s ease-out infinite 2.2s;"></div>
+          <div class="spark" style="width:4px;height:4px;background:#c87941;left:16px;animation:spark-rise2 3.0s ease-out infinite .9s;"></div>
+        </div>
+        <h2>Looking for your match…</h2>
+        <p style="font-size:0.75rem;color:var(--waiting-label);margin-bottom:4px;">Matching on any of these</p>
+        <div id="display-keyword" style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:8px;"></div>
+        <p id="waiting-info" class="waiting-count"></p>
+      </div>
+      <button class="btn btn-ghost" id="btn-cancel" style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);padding:8px 16px;">Cancel</button>
+    </div>
+
+    <!-- MATCHED -->
+    <div id="section-matched" style="position:relative;">
+
+      <div class="chat-column-grow">
+        <div class="chat-box" id="chat-box">
+          <div class="msg system">Finding your match…</div>
+        </div>
+      </div>
+
+      <div class="chat-column" style="padding-top:8px;">
+        <div class="chat-input-row">
+          <textarea id="chat-input" placeholder="Type a message…" maxlength="300" autocomplete="off" rows="1"></textarea>
+          <span class="chat-char-count" id="chat-char-count"></span>
+          <button id="btn-send">send</button>
+        </div>
+        <div style="display:flex;align-items:center;margin-top:4px;flex-shrink:0;">
+          <button class="btn btn-ghost" id="btn-leave" style="padding:8px 8px 8px 0;">leave</button>
+          <div style="flex:1;text-align:center;">
+            <button class="btn btn-ghost" id="btn-report" style="padding:8px;" title="Report this conversation">report</button>
+          </div>
+          <button class="btn btn-next" id="btn-next" style="padding:8px 0 8px 8px;">next</button>
+        </div>
+      </div>
+
+      <!-- Report modal -->
+      <div id="report-modal" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center;">
+        <div style="background:var(--report-bg);border:1px solid var(--border-input);border-radius:12px;padding:24px;max-width:400px;width:90%;margin:auto;">
+          <h3 class="report-title">Report this conversation</h3>
+          <p style="font-size:0.8125rem;color:var(--muted);margin-bottom:16px;line-height:1.5;">Select a reason. No message content is stored or transmitted — only the report timestamp and reason will be sent.</p>
+          <select id="report-reason" style="width:100%;background:var(--select-bg);color:var(--ink);border:1px solid var(--border-input);border-radius:8px;padding:8px;margin-bottom:12px;font-family:'Inter',sans-serif;font-size:0.875rem;">
+            <option value="">— Select a reason —</option>
+            <option value="csam">Child sexual abuse material (CSAM)</option>
+            <option value="harassment">Harassment or threats</option>
+            <option value="illegal">Other illegal content</option>
+            <option value="spam">Spam or bot</option>
+          </select>
+          <label style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);display:block;margin-bottom:4px;">Additional details <span style="opacity:0.5;font-style:italic;text-transform:none;letter-spacing:0;">(optional)</span></label>
+          <textarea id="report-details" maxlength="500" placeholder="Describe what happened in your own words…" style="width:100%;background:var(--select-bg);color:var(--ink);border:1px solid var(--border-input);border-radius:8px;padding:8px;font-family:'Inter',sans-serif;font-size:0.8125rem;line-height:1.5;resize:vertical;min-height:88px;margin-bottom:4px;outline:none;"></textarea>
+          <p style="font-size:0.6875rem;color:var(--report-char-fg);margin-bottom:12px;text-align:right;" id="report-char-count">0 / 500</p>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-ghost" id="btn-report-cancel" style="flex:1;padding:8px;">Cancel</button>
+            <button class="btn" id="btn-report-submit" style="flex:2;padding:8px;background:#8b1a1a;">Submit report</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>Emberline — anonymous, ephemeral connections &nbsp;·&nbsp; Messages are not stored &nbsp;·&nbsp; <a href="/privacy">Privacy policy</a> &nbsp;·&nbsp; <a href="/terms">Terms of service</a></footer>
+
+<script src="/vendor/nacl-fast.min.js"></script>
+<script src="/vendor/nacl-util.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

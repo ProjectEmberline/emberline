@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability report
+    url: https://github.com/ProjectEmberline/emberline/blob/main/SECURITY.md
+    about: Report a security vulnerability via email (see SECURITY.md for the full policy)
+  - name: Questions, feedback, or design discussion
+    url: https://github.com/ProjectEmberline/emberline/discussions
+    about: Everything that isn't a security vulnerability — bug reports, suggestions, questions
