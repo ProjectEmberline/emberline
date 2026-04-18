@@ -671,7 +671,15 @@
   </div>
 </main>
 
-<footer>__BUILD_FOOTER__<a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="/terms">Terms</a></footer>
+<footer>__BUILD_FOOTER__<a href="#" id="install-link" style="display:none;">install</a><span id="install-sep" style="display:none;"> &nbsp;·&nbsp; </span><a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="/terms">Terms</a></footer>
+
+<div id="install-ios" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--report-bg);border:1px solid var(--border-input);border-radius:12px;padding:24px;max-width:360px;width:90%;margin:auto;text-align:center;">
+    <h3 class="report-title" style="margin-bottom:12px;">Install on iOS</h3>
+    <p style="font-size:0.875rem;color:var(--muted);margin-bottom:20px;line-height:1.6;">Tap the <strong style="color:var(--ink);">Share</strong> button, then choose <strong style="color:var(--ink);">Add to Home Screen</strong>.</p>
+    <button class="btn btn-ghost" id="btn-install-close" style="padding:8px 20px;">Close</button>
+  </div>
+</div>
 
 <script src="/vendor/nacl-fast.min.js"></script>
 <script src="/vendor/nacl-util.min.js"></script>

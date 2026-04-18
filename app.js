@@ -681,3 +681,72 @@ function triggerPrewarm() {
 const _kwInput = document.getElementById('keyword-input');
 _kwInput.addEventListener('focus',   triggerPrewarm, { once: true });
 _kwInput.addEventListener('keydown', triggerPrewarm, { once: true });
+
+// ── Install link ─────────────────────────────────────────────────────────────
+// Shown in the footer on browsers that support installing Emberline as a PWA.
+// Three cases:
+//   1. Already installed (standalone display mode) → hide link entirely
+//   2. Chrome/Edge/Android Chrome → capture beforeinstallprompt, click triggers native prompt
+//   3. iOS Safari → prompt unavailable; click opens a small modal with instructions
+// On Firefox desktop (no PWA install support) the link stays hidden — pointless
+// to advertise a flow the browser won't honour.
+
+(function installLink() {
+  const link = document.getElementById('install-link');
+  const sep  = document.getElementById('install-sep');
+  if (!link || !sep) return;
+
+  // Already installed → do nothing
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+  if (isStandalone) return;
+
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+  let deferredPrompt = null;
+
+  function showLink() {
+    link.style.display = 'inline';
+    sep.style.display  = 'inline';
+  }
+
+  function hideLink() {
+    link.style.display = 'none';
+    sep.style.display  = 'none';
+  }
+
+  // iOS path — no install event, just show link and wire to modal
+  if (isIOS) {
+    showLink();
+    const modal = document.getElementById('install-ios');
+    const closeBtn = document.getElementById('btn-install-close');
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      modal.style.display = 'flex';
+    });
+    closeBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+    modal.addEventListener('click', e => {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+    return;
+  }
+
+  // Chromium path — wait for beforeinstallprompt
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showLink();
+  });
+
+  link.addEventListener('click', async e => {
+    e.preventDefault();
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    if (outcome === 'accepted') hideLink();
+  });
+
+  // If installation completes via URL-bar icon or another path, hide the link
+  window.addEventListener('appinstalled', hideLink);
+})();
