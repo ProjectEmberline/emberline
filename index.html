@@ -357,13 +357,8 @@
     word-break: break-word;
     white-space: pre-wrap;
     min-width: 0;
-    max-height: 200px;
-    overflow-y: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
     margin-top: 16px;
   }
-  .msg::-webkit-scrollbar { display: none; }
   .msg:first-child { margin-top: 0; }
   .msg.me + .msg.me,
   .msg.them + .msg.them { margin-top: 4px; }
@@ -590,12 +585,12 @@
     <!-- ENTRY -->
     <div id="section-entry">
       <h1>Find someone who <em>gets it.</em></h1>
-      <p class="sub">Add up to 10 interests. We'll match you with a stranger who shares at least one. No accounts, no logs, end-to-end encrypted — just a private conversation.</p>
+      <p class="sub">Add up to 10 words that resonate with you. We'll match you with a stranger who shares at least one. No accounts, no ads, no tracking, no message storage, no IP logs — just a fleeting moment, end-to-end encrypted.</p>
       <div class="tag-field" id="tag-field">
         <div id="tag-list"></div>
         <input type="text" id="keyword-input" placeholder="type a word, press Enter…" maxlength="20" autocomplete="off" />
       </div>
-      <p class="hint">Try: "Music", "Pokemon", "Fitness", "Rust", "History"</p>
+      <p class="hint">Try: "midnight", "coffee", "nostalgia", "rust", "volta"</p>
       <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;" aria-hidden="true">
 
       <button class="btn" id="btn-enter" disabled>Find my match →</button>
