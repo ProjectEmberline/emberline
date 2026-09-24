@@ -180,9 +180,15 @@ function handleMessage(msg) {
     case 'matched':
       clearTimeout(window._matchFallbackTimer);
       document.body.classList.add('is-matched');
-      if (msg.partnerPubKey && myKeyPair) {
-        const partnerPub = nacl.util.decodeBase64(msg.partnerPubKey);
-        sharedSecret = nacl.box.before(partnerPub, myKeyPair.secretKey);
+      sharedSecret = null;
+      if (typeof msg.partnerPubKey === 'string' && myKeyPair) {
+        // A malformed key must not throw out of the handler and freeze the UI
+        try {
+          const partnerPub = nacl.util.decodeBase64(msg.partnerPubKey);
+          if (partnerPub.length === nacl.box.publicKeyLength) {
+            sharedSecret = nacl.box.before(partnerPub, myKeyPair.secretKey);
+          }
+        } catch (e) { /* leave sharedSecret null */ }
       }
       const matchedKws = Array.isArray(msg.matchedKeywords) ? msg.matchedKeywords : [];
       const isRandom = matchedKws.length === 0;
@@ -214,6 +220,11 @@ function handleMessage(msg) {
         sysDiv.appendChild(document.createTextNode('.'));
       }
       chatBox.appendChild(sysDiv);
+      if (!sharedSecret) {
+        appendSystemMsg('Could not set up encryption with this match. Press next to find someone else.');
+        document.getElementById('chat-input').disabled = true;
+        document.getElementById('btn-send').disabled = true;
+      }
       show('matched');
       break;
 

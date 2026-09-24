@@ -35,7 +35,7 @@ app.js     (browser — single JS file, no framework)
 
 Persistent files (append-only, no message content):
   reports.log   reason + optional reporter-written details + server timestamp (no IPs)
-  abuse.log     event type + timestamp + IP  (for Fail2Ban)
+  abuse.log     event type + timestamp + IP  (audit trail of abuse events and bans)
 ```
 
 **No database. No sessions. No persistence beyond the two log files.**
@@ -56,7 +56,7 @@ Persistent files (append-only, no message content):
 ├── package.json        — Dependencies: express ^4, ws ^8
 ├── setup-assets.js     — One-time asset downloader (fonts + NaCl)
 ├── reports.log         — Abuse reports (auto-created in LOG_DIR)
-├── abuse.log           — Fail2Ban feed (auto-created in LOG_DIR)
+├── abuse.log           — Abuse events + bans (auto-created in LOG_DIR)
 └── public/             — The ONLY directory served over HTTP
     ├── index.html      — Single-page frontend (CSS inline, JS via src)
     ├── app.js          — All client-side logic
@@ -122,7 +122,8 @@ When Next → broke, successive fixes (Worker threads, pre-warming, parallel sol
 |---|---|---|
 | Proof-of-Work | SHA-256 hash prefix, 4 leading zeros | `POW_DIFFICULTY = 4` |
 | Timing | Reject `join` < 200ms after connect | `MIN_JOIN_DELAY_MS = 200` |
-| Honeypot keyword | `__honeypot__` → flag + block IP for 24h | `HONEYPOT_KEYWORD` |
+| Honeypot keyword | `__honeypot__` → ban IP for 24h | `HONEYPOT_KEYWORD` |
+| Auto-ban | 20 abuse events in 10 min → ban IP for 24h (in memory) | `STRIKE_LIMIT`, `BAN_DURATION_MS` |
 | WS connection rate | Max 20 new connections/min/IP | `MAX_WS_CONNECTS_PER_MIN` |
 | Concurrent WS cap | Max 20 open sockets/IP | `MAX_CONNS_PER_IP` |
 | HTTP API rate | Max 60 req/min/IP (API routes only) | `MAX_HTTP_API_RPM` |
@@ -158,19 +159,27 @@ Every HTTP response carries:
 Content-Security-Policy:
   default-src 'none'
   script-src 'self'
-  style-src 'self' 'unsafe-inline'   ← required for inline <style> in index.html
+  style-src 'self' 'sha256-…'        ← one hash per inline <style> block
   font-src 'self'
   img-src 'self'
-  connect-src 'self' ws: wss:
+  connect-src 'self' <ws/wss form of ALLOWED_WS_ORIGINS>
   manifest-src 'self'
   worker-src 'self'
+  base-uri 'none'
+  form-action 'none'
   frame-ancestors 'none'
 X-Frame-Options: DENY
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Resource-Policy: same-origin
+Strict-Transport-Security: max-age=31536000
 ```
 
 All JavaScript lives in `app.js` (external file), so `script-src 'self'` is fully effective.
+
+There is no `'unsafe-inline'` for styles. Pages must not use `style=""` attributes — put rules in the page's `<style>` block instead. `server.js` hashes every `<style>` block at startup (`allowStyleBlocks()`) and lists the hashes in the CSP, so editing a block needs no manual hash update. Setting styles from JavaScript via `el.style.x = …` is unaffected.
 
 ### 5.4 E2EE
 
@@ -188,23 +197,23 @@ No `innerHTML` is used with any user-controlled or server-supplied data. All dyn
 
 Room IDs are generated with `crypto.randomBytes(8).toString('hex')` — 64-bit cryptographically random. `Math.random()` is never used for security-relevant values.
 
-### 5.7 Fail2Ban Integration
+### 5.7 Automatic bans
 
 `abuse.log` is written at every rejection point:
 ```
 2026-03-28T12:00:00Z [pow_fail] ip=1.2.3.4
 ```
 
-Rejection labels: `pow_fail` `too_fast` `honeypot` `conn_cap` `ws_rate` `flagged_ip` `http_flood`
+Rejection labels: `pow_fail` `pow_ip_mismatch` `honeypot` `conn_cap` `ws_rate` `ws_origin` `http_flood`, plus `banned` when an IP gets banned.
+
+Every rejection is also a **strike** against the client IP. 20 strikes within 10 minutes (or one honeypot hit) bans the IP for 24 hours: all HTTP requests get `403` and WebSocket upgrades are refused, without writing further log lines. Bans live in memory and are cleared on restart. `BAN_ALLOWLIST` (comma-separated IPs) exempts addresses such as the operator's own.
+
+Bans are enforced in the app rather than a host firewall on purpose. Behind a reverse proxy or tunnel, the app host only ever sees the proxy's address, so a firewall there cannot match client IPs; the app sees the real IP via `X-Forwarded-For` (see `TRUST_PROXY`). A firewall-level ban (Fail2Ban) is only effective on the machine that receives the client's TCP connection — in the canonical deployment, the VPS. A Fail2Ban setup for that case:
 
 **Filter** (`/etc/fail2ban/filter.d/emberline.conf`):
 ```ini
 [Definition]
-failregex = ^.+ \[pow_fail\] ip=<HOST>$
-            ^.+ \[too_fast\] ip=<HOST>$
-            ^.+ \[honeypot\] ip=<HOST>$
-            ^.+ \[conn_cap\] ip=<HOST>$
-            ^.+ \[ws_rate\] ip=<HOST>$
+failregex = ^.+ \[banned\] ip=<HOST>$
 ignoreregex =
 ```
 
@@ -213,7 +222,7 @@ ignoreregex =
 [emberline]
 enabled  = true
 filter   = emberline
-logpath  = /home/ember/abuse.log
+logpath  = /path/to/abuse.log   # must be readable on the host that runs the jail
 maxretry = 5
 findtime = 600
 bantime  = 3600
@@ -244,7 +253,7 @@ IPs appear only in RAM maps and `abuse.log`. They are **never** in `reports.log`
 
 ### 6.2 Zero External Requests
 
-Fonts and NaCl libraries are downloaded once via `setup-assets.js` and served from the project directory. The browser makes **no external requests**. Verify this whenever adding anything new.
+Fonts are downloaded once via `setup-assets.js`; the NaCl libraries are npm dependencies (integrity-pinned in `package-lock.json`) that `setup-assets.js` copies into `public/vendor/`. Both are served from `public/`. The browser makes **no external requests**. Verify this whenever adding anything new.
 
 ### 6.3 No Cookies, No Analytics, No Client-Side Storage
 
@@ -383,7 +392,7 @@ Before writing any code, answer these in order:
 1. **Is there a simpler way?** A one-line fix beats a new abstraction every time.
 2. **Does it store new data?** Update the Privacy Policy and this document.
 3. **Does it break E2EE?** The server must stay a blind relay. No plaintext ever.
-4. **Does it log IPs in a new context?** IPs live in two places today: transient RAM maps (rate limiting) and `abuse.log` (Fail2Ban feed, 90-day rotation). Any new IP-logging path — particularly one that associates IPs with user actions, content, or reports — must be rejected or justified in writing, with the deployed `/privacy` page updated in lockstep.
+4. **Does it log IPs in a new context?** IPs live in two places today: transient RAM maps (rate limiting, bans) and `abuse.log` (abuse audit trail, 90-day rotation). Any new IP-logging path — particularly one that associates IPs with user actions, content, or reports — must be rejected or justified in writing, with the deployed `/privacy` page updated in lockstep.
 5. **Does it weaken a bot-defence layer?** Either compensate or justify removal.
 6. **Does it hurt UX?** A security measure that makes the app unusable is not a good security measure.
 

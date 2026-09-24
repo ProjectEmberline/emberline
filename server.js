@@ -18,6 +18,7 @@
  *   TRUST_PROXY  number of reverse proxies in front of this process
  *                (default 1). Used to pick the real client IP out of
  *                X-Forwarded-For. Set to 0 if clients connect directly.
+ *   BAN_ALLOWLIST  comma-separated IPs that are never auto-banned
  */
 
 'use strict';
@@ -73,7 +74,18 @@ const CHALLENGE_TTL_MS        = 60_000;
 const POW_DIFFICULTY          = 4;
 const HEARTBEAT_INTERVAL_MS   = 60_000;  // 60s — halves ping overhead vs 30s while still
                                            // detecting zombie connections within a minute
-const FLAGGED_IP_TTL_MS       = 24 * 60 * 60 * 1000;
+
+// Automatic bans. Every abuse event (the same events written to abuse.log)
+// is a strike against the client IP. Too many strikes in the window, or a
+// single honeypot hit, bans the IP in memory: HTTP gets 403, WebSocket
+// upgrades are refused. This works regardless of network topology — unlike a
+// firewall on the app host, which only sees the tunnel/proxy address.
+const STRIKE_LIMIT            = 20;              // abuse events per window…
+const STRIKE_WINDOW_MS        = 10 * 60 * 1000;  // …within 10 minutes
+const BAN_DURATION_MS         = 24 * 60 * 60 * 1000;
+const BAN_ALLOWLIST           = new Set(
+  (process.env.BAN_ALLOWLIST || '').split(',').map(s => s.trim()).filter(Boolean)
+);
 
 // Hard memory ceilings — protect against flood even if rate limits are bypassed
 const MAX_WAITING_POOL_KEYS   = 10_000;
@@ -104,8 +116,8 @@ const ALLOWED_WS_ORIGINS = new Set([
   'https://www.emberline.ch',
 ]);
 
-// Base64 character class for NaCl public key validation (44 chars for 32-byte key)
-const BASE64_RE = /^[A-Za-z0-9+/=]{1,64}$/;
+// NaCl box public key: exactly 32 bytes → 43 base64 chars + one '=' pad
+const PUBKEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // In-memory state  (never written to disk)
@@ -122,7 +134,8 @@ const httpApiRate    = new Map();  // ip → { count, resetAt }
 const httpStaticRate = new Map();  // ip → { count, resetAt }
 const reportThrottle = new Map();  // ip → { count, resetAt }
 const challengeRate  = new Map();  // ip → { count, resetAt }
-const flaggedIPs     = new Map();  // ip → flaggedAt timestamp
+const abuseStrikes   = new Map();  // ip → { count, resetAt }
+const bannedIPs      = new Map();  // ip → bannedUntil timestamp
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -149,11 +162,32 @@ function randomId() {
 // Abuse log — for Fail2Ban pattern matching only. No content, no identity.
 const ABUSE_LOG   = path.join(LOG_DIR, 'abuse.log');
 const REPORTS_LOG = path.join(LOG_DIR, 'reports.log');
-function logAbuse(reason, ip) {
+function writeAbuseLine(reason, ip) {
   const line = `${new Date().toISOString()} [${reason}] ip=${ip}\n`;
   fs.appendFile(ABUSE_LOG, line, err => {
     if (err) console.error('[abuse-log] write failed:', err.message);
   });
+}
+
+// Records an abuse event and counts it as a strike towards an automatic ban.
+function logAbuse(reason, ip) {
+  writeAbuseLine(reason, ip);
+  if (rateExceeded(abuseStrikes, ip, STRIKE_LIMIT, STRIKE_WINDOW_MS)) banIP(ip);
+}
+
+function banIP(ip) {
+  if (BAN_ALLOWLIST.has(ip) || isBanned(ip)) return;
+  bannedIPs.set(ip, Date.now() + BAN_DURATION_MS);
+  abuseStrikes.delete(ip);
+  writeAbuseLine('banned', ip);
+  console.log(`[ban] banned=${bannedIPs.size}`);
+}
+
+function isBanned(ip) {
+  const until = bannedIPs.get(ip);
+  if (!until) return false;
+  if (Date.now() > until) { bannedIPs.delete(ip); return false; }
+  return true;
 }
 
 // Sliding-window rate limiter. Returns true if the IP is over the limit.
@@ -166,21 +200,14 @@ function rateExceeded(map, ip, maxPerWindow, windowMs) {
   return rec.count > maxPerWindow;
 }
 
-function isIPFlagged(ip) {
-  const ts = flaggedIPs.get(ip);
-  if (!ts) return false;
-  if (Date.now() - ts > FLAGGED_IP_TTL_MS) { flaggedIPs.delete(ip); return false; }
-  return true;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Periodic sweep — evict expired entries, keep all maps bounded
 // ─────────────────────────────────────────────────────────────────────────────
 
 setInterval(() => {
-  const now    = Date.now();
-  const cutoff = now - FLAGGED_IP_TTL_MS;
-  for (const [k, v] of flaggedIPs)     { if (v < cutoff)        flaggedIPs.delete(k); }
+  const now = Date.now();
+  for (const [k, v] of bannedIPs)      { if (now > v)           bannedIPs.delete(k); }
+  for (const [k, v] of abuseStrikes)   { if (now > v.resetAt)   abuseStrikes.delete(k); }
   for (const [k, v] of wsConnectRate)  { if (now > v.resetAt)   wsConnectRate.delete(k); }
   for (const [k, v] of httpApiRate)    { if (now > v.resetAt)   httpApiRate.delete(k); }
   for (const [k, v] of httpStaticRate) { if (now > v.resetAt)   httpStaticRate.delete(k); }
@@ -202,24 +229,62 @@ setInterval(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.disable('x-powered-by');
+app.set('query parser', false); // no route reads req.query — keep qs off the request path
 
-// Built once — these headers never change per request.
-const CSP_HEADER =
-  "default-src 'none'; " +
-  "script-src 'self'; " +
-  "style-src 'self' 'unsafe-inline'; " +
-  "font-src 'self'; " +
-  "img-src 'self'; " +
-  "connect-src 'self' ws: wss:; " +
-  "manifest-src 'self'; " +
-  "worker-src 'self'; " +
-  "frame-ancestors 'none'";
+// No 'unsafe-inline' for styles: pages have no style="" attributes, and each
+// inline <style> block is allowed by its SHA-256 hash, registered via
+// allowStyleBlocks() when the page is built at startup.
+const STYLE_HASHES = new Set();
+
+function allowStyleBlocks(html) {
+  for (const m of html.matchAll(/<style>([\s\S]*?)<\/style>/g)) {
+    // Browsers hash the parsed text, and HTML parsing turns CRLF into LF.
+    const text = m[1].replace(/\r\n?/g, '\n');
+    STYLE_HASHES.add(`'sha256-${crypto.createHash('sha256').update(text, 'utf8').digest('base64')}'`);
+  }
+  return html;
+}
+
+// WebSocket endpoints: the allowed page origins with ws(s) schemes. Listed
+// explicitly because older Safari versions don't let 'self' cover ws/wss.
+const WS_CONNECT_SRC = [...ALLOWED_WS_ORIGINS]
+  .map(o => o.replace(/^http/, 'ws'))
+  .join(' ');
+
+let CSP_HEADER = null; // built on first request, after all pages registered hashes
+function cspHeader() {
+  return CSP_HEADER ??= [
+    "default-src 'none'",
+    "script-src 'self'",
+    `style-src 'self' ${[...STYLE_HASHES].join(' ')}`,
+    "font-src 'self'",
+    "img-src 'self'",
+    `connect-src 'self' ${WS_CONNECT_SRC}`,
+    "manifest-src 'self'",
+    "worker-src 'self'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+}
 
 app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy', CSP_HEADER);
+  res.setHeader('Content-Security-Policy', cspHeader());
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  // Browsers ignore HSTS over plain HTTP, so this is harmless in local dev.
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  next();
+});
+
+// Banned IPs are refused before any other work, without logging each request
+// again — the ban itself is logged once.
+app.use((req, res, next) => {
+  if (isBanned(getIP(req))) return res.status(403).end();
   next();
 });
 
@@ -251,6 +316,7 @@ const wss = new WS.Server({
   server,
   maxPayload: 4096, // 4 KB hard ceiling at library level
   verifyClient: ({ origin, req }) => {
+    if (isBanned(getIP(req))) return false;
     // Non-browser clients (curl, etc.) send no origin — allow them through
     // so health checks and CLI tools work. Browsers always send an origin.
     if (!origin) return true;
@@ -277,13 +343,6 @@ wss.on('connection', (ws, req) => {
   if (currentConns >= MAX_CONNS_PER_IP) {
     logAbuse('conn_cap', ip);
     ws.close(4429, 'Too many connections from your IP');
-    return;
-  }
-
-  // ── Honeypot: flagged IPs ─────────────────────────────────────────────────
-  if (isIPFlagged(ip)) {
-    logAbuse('flagged_ip', ip);
-    ws.close(1008, 'Blocked');
     return;
   }
 
@@ -365,7 +424,7 @@ wss.on('connection', (ws, req) => {
         // ── Honeypot keyword ─────────────────────────────────────────────
         if (keywords.includes(HONEYPOT_KEYWORD)) {
           logAbuse('honeypot', ws._ip);
-          flaggedIPs.set(ws._ip, Date.now());
+          banIP(ws._ip);
           ws.close(1008, 'Blocked');
           return;
         }
@@ -379,6 +438,9 @@ wss.on('connection', (ws, req) => {
         // ── Clean up any previous pool membership (critical for Next →) ──
         // Without this, the ws stays in the old pool from the previous
         // session and either matches with itself or blocks future matches.
+        // A re-join while still waiting (random-pool fallback) keeps the
+        // original wait time, so the client doesn't lose its place in line.
+        const waitingSince = ws.keywords ? ws._joinedPoolAt : 0;
         if (ws.keywords) {
           ws.keywords.forEach(kw => {
             const p = waitingPool.get(kw);
@@ -387,9 +449,12 @@ wss.on('connection', (ws, req) => {
           ws.keywords = null;
         }
 
-        ws.pubKey = (typeof msg.pubKey === 'string' && BASE64_RE.test(msg.pubKey))
-          ? msg.pubKey.slice(0, 64)
-          : null;
+        // A malformed key would make the partner's key derivation throw
+        if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) {
+          send(ws, { type: 'error', code: 'invalid_key' });
+          return;
+        }
+        ws.pubKey = msg.pubKey;
 
         // ── Matching algorithm ───────────────────────────────────────────
         // Scan ALL keyword pools and score every candidate by how many
@@ -484,7 +549,7 @@ wss.on('connection', (ws, req) => {
 
         if (!matched) {
           ws.keywords      = keywords;
-          ws._joinedPoolAt = Date.now();
+          ws._joinedPoolAt = waitingSince || Date.now();
           keywords.forEach(kw => {
             const pool = waitingPool.get(kw) || new Set();
             pool.add(ws);
@@ -686,8 +751,7 @@ app.post('/report', (req, res) => {
 const POLICY_EFFECTIVE_DATE = '24 September 2026';
 const TERMS_EFFECTIVE_DATE  = '17 April 2026';
 
-app.get('/privacy', (req, res) => {
-  res.send(`<!DOCTYPE html>
+const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -701,6 +765,7 @@ app.get('/privacy', (req, res) => {
   p { color: #a89070; margin-bottom: 1rem; } a { color: #c87941; }
   .date { font-size: 0.85rem; color: #5a4e44; margin-bottom: 2rem; }
   hr { border: none; border-top: 1px solid #2e2620; margin: 2rem 0; }
+  .small { font-size: 0.85rem; }
 </style>
 </head>
 <body>
@@ -725,16 +790,16 @@ app.get('/privacy', (req, res) => {
 <p>You have the right to request access to any personal data we hold about you and to request its deletion. Because we store no user identities, no messages, and no session history, there is typically nothing to disclose or delete. The one category of data that could constitute personal data under nFADP is the IP entries in the abuse log described above; these can be removed on request if you provide the IP and an approximate time window. Contact: <a href="mailto:contactall@emberline.ch">contactall@emberline.ch</a>.</p>
 <h2>Changes</h2>
 <p>We may update this policy as the platform evolves. The effective date above reflects the most recent revision.</p>
-<hr><p style="font-size:0.85rem;"><a href="/">← Back to Emberline</a></p>
+<hr><p class="small"><a href="/">← Back to Emberline</a></p>
 </body></html>`);
-});
+
+app.get('/privacy', (req, res) => res.send(PRIVACY_HTML));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REST: /terms
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.get('/terms', (req, res) => {
-  res.send(`<!DOCTYPE html>
+const TERMS_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -751,6 +816,7 @@ app.get('/terms', (req, res) => {
   .notice { border-left: 2px solid #c87941; padding-left: 1rem; margin: 1.5rem 0; }
   .notice p { color: #c4a882; }
   hr { border: none; border-top: 1px solid #2e2620; margin: 2rem 0; }
+  .small { font-size: 0.85rem; color: #5a4e44; }
 </style>
 </head>
 <body>
@@ -782,9 +848,10 @@ app.get('/terms', (req, res) => {
 <h2>8. Contact</h2>
 <p>Legal notices and law enforcement requests: <a href="mailto:contactall@emberline.ch">contactall@emberline.ch</a>.</p>
 <hr>
-<p style="font-size:0.85rem;color:#5a4e44;"><a href="/privacy">Privacy policy</a> &nbsp;·&nbsp; <a href="/">Back to Emberline</a></p>
+<p class="small"><a href="/privacy">Privacy policy</a> &nbsp;·&nbsp; <a href="/">Back to Emberline</a></p>
 </body></html>`);
-});
+
+app.get('/terms', (req, res) => res.send(TERMS_HTML));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Build version — commit hash footer
@@ -830,8 +897,8 @@ const BUILD_FOOTER_FRAGMENT = BUILD_VERSION === 'dev'
 // serve the raw template with unreplaced placeholders.
 const INDEX_SOURCE = (() => {
   try {
-    return fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
-      .replace(/__BUILD_FOOTER__/g, BUILD_FOOTER_FRAGMENT);
+    return allowStyleBlocks(fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
+      .replace(/__BUILD_FOOTER__/g, BUILD_FOOTER_FRAGMENT));
   } catch (err) {
     console.error('[index] failed to read index.html template:', err.message);
     return '<!doctype html><title>Emberline</title><p>Server misconfigured.</p>';

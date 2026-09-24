@@ -48,7 +48,7 @@ For the full architecture, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 git clone https://github.com/ProjectEmberline/emberline.git
 cd emberline
 npm install
-node setup-assets.js   # downloads fonts + NaCl libraries for self-hosted serving
+node setup-assets.js   # downloads fonts, copies NaCl libraries into public/vendor
 node server.js
 ```
 
@@ -60,9 +60,10 @@ Only the `public/` directory is served over HTTP. Configuration is via environme
 |---------------|----------------|---------|
 | `PORT`        | `3000`         | Listen port |
 | `LOG_DIR`     | project root   | Where `abuse.log` and `reports.log` are written. Must not be inside `public/`. |
+| `BAN_ALLOWLIST` | (empty)    | Comma-separated IPs that are never auto-banned (e.g. your own). |
 | `TRUST_PROXY` | `1`            | Number of reverse proxies in front of the server. The client IP is taken from `X-Forwarded-For` that many hops back from the socket; anything further left is client-supplied and ignored. Set to `0` if clients connect directly. Getting this wrong either lets clients spoof their IP (too high) or makes every client look like your proxy (too low). |
 
-Production considerations — TLS termination, WireGuard, Fail2Ban integration, log rotation, security headers — are documented in [ARCHITECTURE.md §11](./ARCHITECTURE.md). Deployment artifacts for the canonical instance (Dockerfile, compose configuration) are not published in this repository; a plain Node setup on any Linux host is sufficient to run the project.
+Production considerations — TLS termination, WireGuard, automatic bans, log rotation, security headers — are documented in [ARCHITECTURE.md §11](./ARCHITECTURE.md). Deployment artifacts for the canonical instance (Dockerfile, compose configuration) are not published in this repository; a plain Node setup on any Linux host is sufficient to run the project.
 
 ---
 
@@ -90,7 +91,7 @@ Emberline is built around a specific threat model — casual privacy from third 
 
 **Metadata.** Even with nothing logged on the server, the network path inherently leaks connection timing and packet sizes. A global passive adversary watching both endpoints can infer that two IP addresses exchanged traffic, even without content.
 
-**IP-based abuse defense.** An unauthenticated, anonymous chat service without any IP-based rate limiting does not survive its first day online. Emberline logs IP addresses to a Fail2Ban feed (90-day rotation) solely for rate limiting and temporary bans. This is the single deliberate deviation from a "no logs" posture. It is documented in [the privacy policy](https://emberline.ch/privacy) and is never cross-referenced against reports, conversations, or keywords — because none of those are stored.
+**IP-based abuse defense.** An unauthenticated, anonymous chat service without any IP-based rate limiting does not survive its first day online. Emberline logs IP addresses of abuse events (90-day rotation) and bans repeat offenders temporarily, in memory. This is the single deliberate deviation from a "no logs" posture. It is documented in [the privacy policy](https://emberline.ch/privacy) and is never cross-referenced against reports, conversations, or keywords — because none of those are stored.
 
 ---
 

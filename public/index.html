@@ -567,13 +567,54 @@
     .msg { max-width: 95%; }
     main { padding: 16px; }
   }
+  /* ── Moved from inline style="" attributes (CSP has no 'unsafe-inline') ── */
+  .logo-ember { color:var(--accent); }
+  .logo-line { color:var(--ink); }
+  .header-right { display:flex; align-items:center; gap:12px; }
+  #hp-field { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+  .spark-1 { width:4px; height:4px; background:#c87941; left:28px; animation:spark-rise1 2.0s ease-out infinite; }
+  .spark-2 { width:3px; height:3px; background:#e8a060; left:36px; animation:spark-rise2 2.4s ease-out infinite .7s; }
+  .spark-3 { width:5px; height:5px; background:#c87941; left:20px; animation:spark-rise3 2.8s ease-out infinite 1.3s; }
+  .spark-4 { width:2px; height:2px; background:#f0b870; left:32px; animation:spark-rise4 1.8s ease-out infinite .4s; }
+  .spark-5 { width:3px; height:3px; background:#a86030; left:24px; animation:spark-rise5 2.2s ease-out infinite 1.8s; }
+  .spark-6 { width:2px; height:2px; background:#e8a060; left:40px; animation:spark-rise1 2.6s ease-out infinite 2.2s; }
+  .spark-7 { width:4px; height:4px; background:#c87941; left:16px; animation:spark-rise2 3.0s ease-out infinite .9s; }
+  .waiting .waiting-label { font-size:0.75rem; color:var(--waiting-label); margin-bottom:4px; }
+  #display-keyword { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-bottom:8px; }
+  #btn-cancel { position:absolute; bottom:0; left:50%; transform:translateX(-50%); padding:8px 16px; }
+  #section-matched { position:relative; }
+  .chat-column-controls { padding-top:8px; }
+  .chat-actions { display:flex; align-items:center; margin-top:4px; flex-shrink:0; }
+  #btn-leave { padding:8px 8px 8px 0; }
+  .chat-actions-center { flex:1; text-align:center; }
+  #btn-report { padding:8px; }
+  #btn-next { padding:8px 0 8px 8px; }
+  #report-modal { display:none; position:absolute; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center; }
+  .modal-panel { background:var(--report-bg); border:1px solid var(--border-input); border-radius:12px; padding:24px; max-width:400px; width:90%; margin:auto; }
+  .report-text { font-size:0.8125rem; color:var(--muted); margin-bottom:16px; line-height:1.5; }
+  #report-reason { width:100%; background:var(--select-bg); color:var(--ink); border:1px solid var(--border-input); border-radius:8px; padding:8px; margin-bottom:12px; font-family:'Inter',sans-serif; font-size:0.875rem; }
+  .report-label { font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); display:block; margin-bottom:4px; }
+  .report-optional { opacity:0.5; font-style:italic; text-transform:none; letter-spacing:0; }
+  #report-details { width:100%; background:var(--select-bg); color:var(--ink); border:1px solid var(--border-input); border-radius:8px; padding:8px; font-family:'Inter',sans-serif; font-size:0.8125rem; line-height:1.5; resize:vertical; min-height:88px; margin-bottom:4px; outline:none; }
+  #report-char-count { font-size:0.6875rem; color:var(--report-char-fg); margin-bottom:12px; text-align:right; }
+  .report-actions { display:flex; gap:8px; }
+  #btn-report-cancel { flex:1; padding:8px; }
+  #btn-report-submit { flex:2; padding:8px; background:#8b1a1a; }
+  #install-link { display:none; }
+  #install-sep { display:none; }
+  #install-ios { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center; padding:24px; }
+  .install-panel { background:var(--report-bg); border:1px solid var(--border-input); border-radius:12px; padding:24px; max-width:360px; width:90%; margin:auto; text-align:center; }
+  .install-title { margin-bottom:12px; }
+  .install-text { font-size:0.875rem; color:var(--muted); margin-bottom:20px; line-height:1.6; }
+  .install-strong { color:var(--ink); }
+  #btn-install-close { padding:8px 20px; }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo"><span style="color:var(--accent);">ember</span><span style="color:var(--ink);">line</span></div>
-  <div style="display:flex;align-items:center;gap:12px;">
+  <div class="logo"><span class="logo-ember">ember</span><span class="logo-line">line</span></div>
+  <div class="header-right">
     <div class="tagline" id="user-count">— embers are sparkling</div>
     <button id="btn-theme" title="Toggle light / dark mode" aria-label="Toggle theme">☀</button>
   </div>
@@ -591,7 +632,7 @@
         <input type="text" id="keyword-input" placeholder="type a word, press Enter…" maxlength="20" autocomplete="off" />
       </div>
       <p class="hint">Try: "midnight", "coffee", "nostalgia", "rust", "volta"</p>
-      <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;" aria-hidden="true">
+      <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
 
       <button class="btn" id="btn-enter" disabled>Find my match →</button>
     </div>
@@ -600,24 +641,24 @@
     <div id="section-waiting">
       <div class="waiting">
         <div class="ember-sparks">
-          <div class="spark" style="width:4px;height:4px;background:#c87941;left:28px;animation:spark-rise1 2.0s ease-out infinite;"></div>
-          <div class="spark" style="width:3px;height:3px;background:#e8a060;left:36px;animation:spark-rise2 2.4s ease-out infinite .7s;"></div>
-          <div class="spark" style="width:5px;height:5px;background:#c87941;left:20px;animation:spark-rise3 2.8s ease-out infinite 1.3s;"></div>
-          <div class="spark" style="width:2px;height:2px;background:#f0b870;left:32px;animation:spark-rise4 1.8s ease-out infinite .4s;"></div>
-          <div class="spark" style="width:3px;height:3px;background:#a86030;left:24px;animation:spark-rise5 2.2s ease-out infinite 1.8s;"></div>
-          <div class="spark" style="width:2px;height:2px;background:#e8a060;left:40px;animation:spark-rise1 2.6s ease-out infinite 2.2s;"></div>
-          <div class="spark" style="width:4px;height:4px;background:#c87941;left:16px;animation:spark-rise2 3.0s ease-out infinite .9s;"></div>
+          <div class="spark spark-1"></div>
+          <div class="spark spark-2"></div>
+          <div class="spark spark-3"></div>
+          <div class="spark spark-4"></div>
+          <div class="spark spark-5"></div>
+          <div class="spark spark-6"></div>
+          <div class="spark spark-7"></div>
         </div>
         <h2>Looking for your match…</h2>
-        <p style="font-size:0.75rem;color:var(--waiting-label);margin-bottom:4px;">Matching on any of these</p>
-        <div id="display-keyword" style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:8px;"></div>
+        <p class="waiting-label">Matching on any of these</p>
+        <div id="display-keyword"></div>
         <p id="waiting-info" class="waiting-count"></p>
       </div>
-      <button class="btn btn-ghost" id="btn-cancel" style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);padding:8px 16px;">Cancel</button>
+      <button class="btn btn-ghost" id="btn-cancel">Cancel</button>
     </div>
 
     <!-- MATCHED -->
-    <div id="section-matched" style="position:relative;">
+    <div id="section-matched">
 
       <div class="chat-column-grow">
         <div class="chat-box" id="chat-box">
@@ -625,39 +666,39 @@
         </div>
       </div>
 
-      <div class="chat-column" style="padding-top:8px;">
+      <div class="chat-column chat-column-controls">
         <div class="chat-input-row">
           <textarea id="chat-input" placeholder="Type a message…" maxlength="300" autocomplete="off" rows="1"></textarea>
           <span class="chat-char-count" id="chat-char-count"></span>
           <button id="btn-send">send</button>
         </div>
-        <div style="display:flex;align-items:center;margin-top:4px;flex-shrink:0;">
-          <button class="btn btn-ghost" id="btn-leave" style="padding:8px 8px 8px 0;">leave</button>
-          <div style="flex:1;text-align:center;">
-            <button class="btn btn-ghost" id="btn-report" style="padding:8px;" title="Report this conversation">report</button>
+        <div class="chat-actions">
+          <button class="btn btn-ghost" id="btn-leave">leave</button>
+          <div class="chat-actions-center">
+            <button class="btn btn-ghost" id="btn-report" title="Report this conversation">report</button>
           </div>
-          <button class="btn btn-next" id="btn-next" style="padding:8px 0 8px 8px;">next</button>
+          <button class="btn btn-next" id="btn-next">next</button>
         </div>
       </div>
 
       <!-- Report modal -->
-      <div id="report-modal" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center;">
-        <div style="background:var(--report-bg);border:1px solid var(--border-input);border-radius:12px;padding:24px;max-width:400px;width:90%;margin:auto;">
+      <div id="report-modal">
+        <div class="modal-panel">
           <h3 class="report-title">Report this conversation</h3>
-          <p style="font-size:0.8125rem;color:var(--muted);margin-bottom:16px;line-height:1.5;">Select a reason and, if you like, describe what happened. Only the reason, the time, and anything you write below are sent — no chat messages, no IP address.</p>
-          <select id="report-reason" style="width:100%;background:var(--select-bg);color:var(--ink);border:1px solid var(--border-input);border-radius:8px;padding:8px;margin-bottom:12px;font-family:'Inter',sans-serif;font-size:0.875rem;">
+          <p class="report-text">Select a reason and, if you like, describe what happened. Only the reason, the time, and anything you write below are sent — no chat messages, no IP address.</p>
+          <select id="report-reason">
             <option value="">— Select a reason —</option>
             <option value="csam">Child sexual abuse material (CSAM)</option>
             <option value="harassment">Harassment or threats</option>
             <option value="illegal">Other illegal content</option>
             <option value="spam">Spam or bot</option>
           </select>
-          <label style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);display:block;margin-bottom:4px;">Additional details <span style="opacity:0.5;font-style:italic;text-transform:none;letter-spacing:0;">(optional)</span></label>
-          <textarea id="report-details" maxlength="500" placeholder="Describe what happened in your own words…" style="width:100%;background:var(--select-bg);color:var(--ink);border:1px solid var(--border-input);border-radius:8px;padding:8px;font-family:'Inter',sans-serif;font-size:0.8125rem;line-height:1.5;resize:vertical;min-height:88px;margin-bottom:4px;outline:none;"></textarea>
-          <p style="font-size:0.6875rem;color:var(--report-char-fg);margin-bottom:12px;text-align:right;" id="report-char-count">0 / 500</p>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-ghost" id="btn-report-cancel" style="flex:1;padding:8px;">Cancel</button>
-            <button class="btn" id="btn-report-submit" style="flex:2;padding:8px;background:#8b1a1a;">Submit report</button>
+          <label class="report-label">Additional details <span class="report-optional">(optional)</span></label>
+          <textarea id="report-details" maxlength="500" placeholder="Describe what happened in your own words…"></textarea>
+          <p id="report-char-count">0 / 500</p>
+          <div class="report-actions">
+            <button class="btn btn-ghost" id="btn-report-cancel">Cancel</button>
+            <button class="btn" id="btn-report-submit">Submit report</button>
           </div>
         </div>
       </div>
@@ -666,13 +707,13 @@
   </div>
 </main>
 
-<footer>__BUILD_FOOTER__<a href="#" id="install-link" style="display:none;">install</a><span id="install-sep" style="display:none;"> &nbsp;·&nbsp; </span><a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="/terms">Terms</a></footer>
+<footer>__BUILD_FOOTER__<a href="#" id="install-link">install</a><span id="install-sep"> &nbsp;·&nbsp; </span><a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="/terms">Terms</a></footer>
 
-<div id="install-ios" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center;padding:24px;">
-  <div style="background:var(--report-bg);border:1px solid var(--border-input);border-radius:12px;padding:24px;max-width:360px;width:90%;margin:auto;text-align:center;">
-    <h3 class="report-title" style="margin-bottom:12px;">Install on iOS</h3>
-    <p style="font-size:0.875rem;color:var(--muted);margin-bottom:20px;line-height:1.6;">Tap the <strong style="color:var(--ink);">Share</strong> button, then choose <strong style="color:var(--ink);">Add to Home Screen</strong>.</p>
-    <button class="btn btn-ghost" id="btn-install-close" style="padding:8px 20px;">Close</button>
+<div id="install-ios">
+  <div class="install-panel">
+    <h3 class="report-title install-title">Install on iOS</h3>
+    <p class="install-text">Tap the <strong class="install-strong">Share</strong> button, then choose <strong class="install-strong">Add to Home Screen</strong>.</p>
+    <button class="btn btn-ghost" id="btn-install-close">Close</button>
   </div>
 </div>
 

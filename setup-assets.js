@@ -3,7 +3,7 @@
  * ──────────────────────────────────
  * Run once: node setup-assets.js
  *
- * Downloads all external dependencies (fonts + crypto library) so
+ * Downloads the fonts and copies the crypto library (from node_modules) so
  * Emberline runs fully self-hosted with zero external requests.
  */
 
@@ -85,18 +85,17 @@ async function main() {
   console.log('Emberline asset setup\n');
 
   // ── 1. TweetNaCl ────────────────────────────────────────────────────────────
-  console.log('Downloading NaCl libraries...');
-  await download(
-    'https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js',
-    path.join(JS_DIR, 'nacl-fast.min.js')
-  );
-  console.log('  ✓ public/vendor/nacl-fast.min.js');
-
-  await download(
-    'https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js',
-    path.join(JS_DIR, 'nacl-util.min.js')
-  );
-  console.log('  ✓ public/vendor/nacl-util.min.js');
+  // Copied from node_modules rather than downloaded: npm verifies each package
+  // against the integrity hash pinned in package-lock.json, so a tampered
+  // CDN or registry response fails `npm ci` instead of shipping to users.
+  console.log('Copying NaCl libraries from node_modules...');
+  for (const [pkgFile, name] of [
+    ['tweetnacl/nacl-fast.min.js',      'nacl-fast.min.js'],
+    ['tweetnacl-util/nacl-util.min.js', 'nacl-util.min.js'],
+  ]) {
+    fs.copyFileSync(require.resolve(pkgFile), path.join(JS_DIR, name));
+    console.log(`  ✓ public/vendor/${name}`);
+  }
 
   // ── 2. Google Fonts ──────────────────────────────────────────────────────────
   console.log('\nFetching font CSS...');

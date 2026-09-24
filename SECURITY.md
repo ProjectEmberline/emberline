@@ -61,7 +61,7 @@ If you intend to publish your own analysis after our fix, please coordinate with
 - Self-hosted forks or third-party deployments. Report those to their maintainers.
 - Vulnerabilities in upstream dependencies (Node.js, Express, `ws`, TweetNaCl). Report upstream; we will update our dependency version once a fix is released.
 - Brute-force of the proof-of-work challenge. Difficulty tuning is a documented tradeoff (see ARCHITECTURE.md §5.1).
-- Denial-of-service through sheer traffic volume. Rate limiting and Fail2Ban are best-effort defenses; large-scale network-layer DDoS is a separate threat model we do not attempt to solve in application code.
+- Denial-of-service through sheer traffic volume. Rate limiting and automatic IP bans are best-effort defenses; large-scale network-layer DDoS is a separate threat model we do not attempt to solve in application code.
 - Social engineering of the maintainers or other users.
 - Physical access to the hardware running the canonical instance.
 - Anything listed as a known structural limitation in the [README](./README.md#honest-limitations).
@@ -78,7 +78,7 @@ Emberline is designed to defend against a specific set of threats. Stating them 
 - **The operator reading message content.** The server forwards ciphertext and nonce only; it holds no private key material for any session and cannot decrypt.
 - **Post-session message recovery.** No database, no message persistence, session keys discarded on disconnect or Next →.
 - **Cross-session user identification.** No accounts, ephemeral per-session keypairs, no tracking cookies or client-side storage.
-- **Casual automation and spam.** Proof-of-work challenges, IP-based rate limiting, honeypot keyword detection, Fail2Ban integration.
+- **Casual automation and spam.** Proof-of-work challenges, IP-based rate limiting, honeypot keyword detection, automatic temporary IP bans.
 - **Third-party tracking.** No analytics, no third-party scripts, no externally-loaded fonts, no requests beyond the Emberline server.
 - **IP leakage into user-facing logs.** Abuse reports contain no IP addresses, only a timestamp and a category.
 
