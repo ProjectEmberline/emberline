@@ -105,8 +105,10 @@ function loadRules(topics) {
   } catch (err) {
     console.error(`[bot] could not read rules file ${RULES_FILE}: ${err.message}`);
   }
-  const kw = topics.length ? topics.join(', ') : 'none';
-  return `${rules.replace(/\{keywords\}/g, kw)}\n\n${CORE_RULES}`;
+  const kw    = topics.length ? topics.join(', ') : 'none (they did not pick any)';
+  const first = topics[0] || 'none';
+  rules = rules.replace(/\{keywords\}/g, kw).replace(/\{first_keyword\}/g, first);
+  return `${rules}\n\n${CORE_RULES}`;
 }
 
 // ── LLM ─────────────────────────────────────────────────────────────────────

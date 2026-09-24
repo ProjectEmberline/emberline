@@ -32,6 +32,8 @@ test('replies are plain text and fit the message limit', () => {
 test('core safety rules are always appended after the editable rules', () => {
   const sys = loadRules(['jazz', 'rain']);
   assert.ok(sys.includes('jazz, rain'), 'keywords substituted');
+  assert.ok(sys.includes('"jazz"') && !sys.includes('{first_keyword}'), 'first keyword substituted');
+  assert.ok(loadRules([]).includes('"none"'), 'no keywords → "none"');
   assert.ok(sys.endsWith(CORE_RULES), 'core rules come last');
   assert.match(CORE_RULES, /Never claim or pretend to be human/);
   assert.match(CORE_RULES, /18 or older/);
