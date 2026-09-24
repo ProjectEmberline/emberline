@@ -26,7 +26,7 @@ We believe in your right to privacy.
 
 A Node.js process handles WebSocket connections and a small HTTP surface (`/challenge`, `/count`, `/report`, plus static files and the policy pages). Clients connect, solve a proof-of-work challenge, send keywords, and are matched with another client in the same keyword pool. Once matched, peers exchange public keys through the server — which cannot decrypt what follows — derive a shared secret client-side, and relay encrypted messages. The server keeps in-memory Maps for the waiting pool and active rooms, and writes nothing durable except abuse-prevention logs.
 
-The stack is intentionally small: Node.js, Express, `ws`, TweetNaCl on the client. No framework, no database, no build step. The entire client is one HTML file, one JavaScript file, and a service worker.
+The stack is intentionally small: Node.js, Express, `ws`, TweetNaCl on the client. No framework, no database, no build step. The entire client is one HTML file and one JavaScript file.
 
 The canonical production deployment runs on a Raspberry Pi at home, reached via a Swiss VPS that terminates TLS and forwards over a WireGuard tunnel. The VPS logs nothing and the Pi's real IP is never exposed. This topology is not required to run Emberline — a single Linux host is sufficient — but it is how the public instance is operated.
 
@@ -104,7 +104,6 @@ Emberline is built around a specific threat model — casual privacy from third 
 ├── public/                The only directory served over HTTP
 │   ├── index.html         Single-page frontend
 │   ├── app.js             Client-side logic, no framework
-│   ├── sw.js              Service worker template (see ARCHITECTURE.md §10)
 │   ├── manifest.json      PWA manifest
 │   ├── sitemap.xml
 │   └── icons/

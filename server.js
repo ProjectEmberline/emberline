@@ -261,7 +261,6 @@ function cspHeader() {
     "img-src 'self'",
     `connect-src 'self' ${WS_CONNECT_SRC}`,
     "manifest-src 'self'",
-    "worker-src 'self'",
     "base-uri 'none'",
     "form-action 'none'",
     "frame-ancestors 'none'",
@@ -915,79 +914,6 @@ app.get('/index.html', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REST: /sw.js  —  content-hashed cache versioning
-// ─────────────────────────────────────────────────────────────────────────────
-// The service worker needs a CACHE_NAME that changes when — and only when —
-// cached files actually change. Hard-coding a version string means a future
-// contributor forgets to bump it and users get stale assets silently.
-//
-// Instead: enumerate shell files at startup, compute a short SHA-256 prefix
-// over their contents, and inject both the hash and the shell list into
-// sw.js at request time. Adding a new font file needs zero code edits.
-//
-// This route MUST be declared before `express.static` — otherwise the
-// static handler serves the raw template (with unreplaced placeholders)
-// and the service worker breaks.
-
-const SHELL_STATIC = [
-  '/',
-  '/app.js',
-  '/manifest.json',
-  '/fonts/fonts.css',
-  '/vendor/nacl-fast.min.js',
-  '/vendor/nacl-util.min.js',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-];
-
-function buildShellList() {
-  const files = [...SHELL_STATIC];
-  // Enumerate woff2 files dynamically — Google Fonts generates hashed names
-  try {
-    const fontsDir = path.join(PUBLIC_DIR, 'fonts');
-    for (const f of fs.readdirSync(fontsDir)) {
-      if (f.endsWith('.woff2')) files.push('/fonts/' + f);
-    }
-  } catch {} // fonts/ may not exist in fresh dev environments
-
-  // Filter to files that exist on disk, so cache.addAll() doesn't fail install
-  return files.filter(url => {
-    const rel = url === '/' ? 'index.html' : url.replace(/^\//, '');
-    try { fs.accessSync(path.join(PUBLIC_DIR, rel)); return true; }
-    catch { return false; }
-  });
-}
-
-const SHELL_LIST = buildShellList();
-
-const CACHE_VERSION = (() => {
-  const h = crypto.createHash('sha256');
-  for (const url of SHELL_LIST) {
-    const rel = url === '/' ? 'index.html' : url.replace(/^\//, '');
-    try { h.update(fs.readFileSync(path.join(PUBLIC_DIR, rel))); } catch {}
-  }
-  return h.digest('hex').slice(0, 8);
-})();
-
-const SW_SOURCE = (() => {
-  try {
-    return fs.readFileSync(path.join(PUBLIC_DIR, 'sw.js'), 'utf8')
-      .replace('__CACHE_VERSION__', CACHE_VERSION)
-      .replace('__SHELL_LIST__', JSON.stringify(SHELL_LIST));
-  } catch (err) {
-    console.error('[sw] failed to read sw.js template:', err.message);
-    return '// sw.js template missing';
-  }
-})();
-
-app.get('/sw.js', (req, res) => {
-  res.type('application/javascript');
-  // Always revalidate — this is how new cache versions reach clients
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.send(SW_SOURCE);
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Static files — PUBLIC_DIR only. Dotfiles are denied explicitly.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1011,6 +937,5 @@ server.listen(PORT, () => {
   console.log(`Reports → ${REPORTS_LOG}`);
   console.log(`Abuse   → ${ABUSE_LOG}`);
   console.log(`Proxy   → trusting ${TRUST_PROXY} hop(s) of X-Forwarded-For`);
-  console.log(`SW      → cache=${CACHE_VERSION} files=${SHELL_LIST.length}`);
   console.log(`BUILD   → ${BUILD_VERSION_SHORT}${BUILD_VERSION === 'dev' ? '' : ` (${BUILD_VERSION})`}`);
 });

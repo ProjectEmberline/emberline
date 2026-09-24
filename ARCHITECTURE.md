@@ -61,7 +61,6 @@ Persistent files (append-only, no message content):
     ├── index.html      — Single-page frontend (CSS inline, JS via src)
     ├── app.js          — All client-side logic
     ├── manifest.json   — PWA manifest
-    ├── sw.js           — Service worker template (caches app shell)
     ├── sitemap.xml
     ├── icons/
     │   ├── icon-192.png — PWA icon (ember flame)
@@ -164,7 +163,6 @@ Content-Security-Policy:
   img-src 'self'
   connect-src 'self' <ws/wss form of ALLOWED_WS_ORIGINS>
   manifest-src 'self'
-  worker-src 'self'
   base-uri 'none'
   form-action 'none'
   frame-ancestors 'none'
@@ -372,16 +370,12 @@ Messages have `max-height: 200px` with hidden scrollbar overflow. The textarea i
 
 ## 10. PWA
 
-Emberline is installable as a Progressive Web App via `manifest.json` and `sw.js`.
+Emberline is installable as a Progressive Web App via `manifest.json`. There is deliberately **no service worker**: it would store the app's files in the browser's Cache Storage, which conflicts with the privacy policy's promise of no persistent client-side storage. Current Chromium browsers and iOS Safari install web apps without one.
 
 - **manifest.json:** Defines app name, theme color (`#1c1713`), icons (192px + 512px ember flame).
-- **sw.js:** A **template**, not valid JS on its own. `CACHE_NAME` and `SHELL` are placeholders (`__CACHE_VERSION__`, `__SHELL_LIST__`) that `server.js` fills in at request time. The cache name is an 8-char SHA-256 prefix over the contents of every shell file — so the cache invalidates exactly when cached files actually change, with no manual version bumps. The shell list is enumerated from disk at server startup (includes all `/fonts/*.woff2` files found, filters out anything missing so dev environments install cleanly). Never caches `/challenge`, `/count`, `/report`, `/sw.js` itself, or WebSocket connections. HTML uses network-first; static assets use cache-first.
-- **index.html:** Includes `<link rel="manifest">`, Apple meta tags (`apple-mobile-web-app-capable`, etc.), and service worker registration script.
+- **index.html:** Includes `<link rel="manifest">` and Apple meta tags (`apple-mobile-web-app-capable`, etc.).
+- **app.js:** Shows the footer "install" link where the browser supports it (`beforeinstallprompt` on Chromium, an instructions modal on iOS).
 - **Icons:** Three-layer ember flame (amber outer, orange middle, gold core). Generated via `generate-icons.html`.
-
-The `/sw.js` handler in `server.js` must be registered **before** `express.static`, otherwise the raw template (with unreplaced placeholders) gets served and the service worker fails to install. Startup logs `SW → cache=<8hex> files=N` for deploy verification — the hash should change after any deploy that touches a cached file.
-
-PWA install works in Chrome/Edge (desktop), Chrome (Android), Safari (iOS). Firefox desktop does not support PWA installation but the service worker still caches assets.
 
 ---
 

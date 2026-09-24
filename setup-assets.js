@@ -62,8 +62,8 @@ function download(url, dest, redirectsLeft = 5) {
 // .ttf links; a current desktop browser UA gets .woff2 split by unicode-range.
 const FONT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-// Unicode subsets to self-host. The service worker pre-caches every font file,
-// so shipping cyrillic/greek/vietnamese would bloat every install.
+// Unicode subsets to self-host. Browsers only fetch the subsets a page needs,
+// so cyrillic/greek/vietnamese would just be dead weight in the image.
 const FONT_SUBSETS = new Set(['latin', 'latin-ext']);
 
 function fetchFontCSS(url) {
