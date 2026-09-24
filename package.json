@@ -1,11 +1,23 @@
 {
-  "name": "kindred",
+  "name": "emberline",
   "version": "1.0.0",
-  "description": "Keyword-based anonymous chat matchmaking",
+  "private": true,
+  "description": "Anonymous, ephemeral, end-to-end encrypted keyword-matched chat",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ProjectEmberline/emberline.git"
+  },
+  "homepage": "https://emberline.ch",
   "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
-    "dev": "npx nodemon server.js"
+    "dev": "npx nodemon server.js",
+    "setup": "node setup-assets.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.18.2",

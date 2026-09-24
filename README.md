@@ -54,6 +54,8 @@ node server.js
 
 The server listens on port 3000. Put HTTPS in front of it, update `ALLOWED_WS_ORIGINS` in `server.js` to your domain, and you are running.
 
+`npm test` starts a throwaway server and runs the end-to-end tests in `test/` (static-file exposure, CSP, client-IP handling, message relay, rate limits, bans). CI runs them on every push.
+
 Only the `public/` directory is served over HTTP. Configuration is via environment variables:
 
 | Variable      | Default        | Purpose |
@@ -61,6 +63,7 @@ Only the `public/` directory is served over HTTP. Configuration is via environme
 | `PORT`        | `3000`         | Listen port |
 | `LOG_DIR`     | project root   | Where `abuse.log` and `reports.log` are written. Must not be inside `public/`. |
 | `BAN_ALLOWLIST` | (empty)    | Comma-separated IPs that are never auto-banned (e.g. your own). |
+| `MAX_CONNS_PER_IP` | `20`    | Concurrent WebSocket connections per IP. Raise it if many users share one address (carrier-grade NAT, campus networks). |
 | `TRUST_PROXY` | `1`            | Number of reverse proxies in front of the server. The client IP is taken from `X-Forwarded-For` that many hops back from the socket; anything further left is client-supplied and ignored. Set to `0` if clients connect directly. Getting this wrong either lets clients spoof their IP (too high) or makes every client look like your proxy (too low). |
 
 Production considerations — TLS termination, WireGuard, automatic bans, log rotation, security headers — are documented in [ARCHITECTURE.md §11](./ARCHITECTURE.md). Deployment artifacts for the canonical instance (Dockerfile, compose configuration) are not published in this repository; a plain Node setup on any Linux host is sufficient to run the project.

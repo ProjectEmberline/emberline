@@ -19,6 +19,7 @@
  *                (default 1). Used to pick the real client IP out of
  *                X-Forwarded-For. Set to 0 if clients connect directly.
  *   BAN_ALLOWLIST  comma-separated IPs that are never auto-banned
+ *   MAX_CONNS_PER_IP  concurrent WebSocket connections per IP (default 20)
  */
 
 'use strict';
@@ -48,10 +49,13 @@ if (LOG_DIR === PUBLIC_DIR || LOG_DIR.startsWith(PUBLIC_DIR + path.sep)) {
 // received the request from to X-Forwarded-For, so the real client IP is the
 // entry TRUST_PROXY positions from the right (counting the socket address).
 // Anything further left was supplied by the client and cannot be trusted.
-const TRUST_PROXY = (() => {
-  const n = parseInt(process.env.TRUST_PROXY ?? '1', 10);
-  return Number.isInteger(n) && n >= 0 ? n : 1;
-})();
+const TRUST_PROXY = envInt('TRUST_PROXY', 1);
+
+// Non-negative integer from the environment, or the default if unset/invalid.
+function envInt(name, fallback) {
+  const n = parseInt(process.env[name] ?? '', 10);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
+}
 
 const app    = express();
 const server = http.createServer(app);
@@ -60,7 +64,7 @@ const server = http.createServer(app);
 // Constants — all tuneable limits in one place
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MAX_CONNS_PER_IP        = 20;   // concurrent WS connections per IP
+const MAX_CONNS_PER_IP        = envInt('MAX_CONNS_PER_IP', 20); // concurrent WS connections per IP
 const MAX_WS_CONNECTS_PER_MIN = 20;  // new WS connections per IP per minute
                                       // (20 allows rapid Next → clicks without hitting the limit)
 const MAX_HTTP_API_RPM        = 60;  // /challenge, /count, /report per IP per minute
