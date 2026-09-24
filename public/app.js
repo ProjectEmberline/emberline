@@ -130,27 +130,31 @@ function resetChatBox(text) {
 
 function connect() {
   return new Promise((resolve, reject) => {
-    ws = new WebSocket(WS_URL);
-    ws._intentionalClose = false;
-    ws.onopen    = () => resolve();
-    ws.onerror   = () => reject();
-    ws.onmessage = (e) => {
+    // Handlers refer to this socket, not the global `ws`: by the time a close
+    // event fires, `ws` may already be null (Leave) or a newer connection.
+    const sock = ws = new WebSocket(WS_URL);
+    sock._intentionalClose = false;
+    sock.onopen    = () => resolve();
+    sock.onerror   = () => reject();
+    sock.onmessage = (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
       handleMessage(msg);
     };
-    ws.onclose   = (event) => {
+    sock.onclose   = (event) => {
+      if (ws !== sock) return; // a stale socket — the UI has moved on
       // Connection cap — too many users sharing this IP
       if (event.code === 4429) {
         show('entry');
         document.getElementById('btn-enter').disabled = tags.length === 0;
         alert('Too many connections from your IP address. If you\'re using a VPN, try switching servers or disconnecting it.\n\nEmberline is end-to-end encrypted and does not log IP addresses — your privacy is protected without a VPN.');
-        if (ws) { ws._intentionalClose = true; ws = null; }
+        sock._intentionalClose = true;
+        ws = null;
         return;
       }
       // Only show "connection lost" for unexpected drops during an active conversation.
       // Intentional closes (Leave, Next →) set ws._intentionalClose = true first.
-      if (!ws._intentionalClose && document.body.classList.contains('is-matched')) {
+      if (!sock._intentionalClose && document.body.classList.contains('is-matched')) {
         appendSystemMsg('Connection lost.');
       }
     };
