@@ -58,10 +58,17 @@ function download(url, dest, redirectsLeft = 5) {
   });
 }
 
-// Parse Google Fonts CSS to extract actual .woff2 file URLs
+// Google Fonts picks the font format from the User-Agent. A generic UA gets
+// .ttf links; a current desktop browser UA gets .woff2 split by unicode-range.
+const FONT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+// Unicode subsets to self-host. The service worker pre-caches every font file,
+// so shipping cyrillic/greek/vietnamese would bloat every install.
+const FONT_SUBSETS = new Set(['latin', 'latin-ext']);
+
 function fetchFontCSS(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; woff2)' } }, res => {
+    https.get(url, { headers: { 'User-Agent': FONT_UA } }, res => {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         res.resume();
         return reject(new Error(`HTTP ${res.statusCode} fetching ${url}`));
@@ -97,16 +104,21 @@ async function main() {
     'https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap'
   );
 
-  // Extract all woff2 URLs
+  // Google prefixes each @font-face block with a /* subset */ comment.
+  // Keep only the blocks for the subsets we self-host.
+  const blocks = [...fontCSS.matchAll(/\/\*\s*([\w-]+)\s*\*\/\s*(@font-face\s*\{[^}]+\})/g)]
+    .filter(m => FONT_SUBSETS.has(m[1]))
+    .map(m => m[2]);
+  if (blocks.length === 0) throw new Error('No @font-face blocks found for subsets: ' + [...FONT_SUBSETS].join(', '));
+
   const urlRegex = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+\.woff2)\)/g;
-  const matches = [...fontCSS.matchAll(urlRegex)];
-  const uniqueUrls = [...new Set(matches.map(m => m[1]))];
-  console.log(`  Found ${uniqueUrls.length} font files`);
+  const uniqueUrls = [...new Set(blocks.flatMap(b => [...b.matchAll(urlRegex)].map(m => m[1])))];
+  console.log(`  Found ${blocks.length} @font-face blocks, ${uniqueUrls.length} font files`);
 
   // Download each font file and track filename → url mapping
   const fontMap = {};
   for (const url of uniqueUrls) {
-    const filename = url.split('/').pop().split('?')[0] + '.woff2';
+    const filename = url.split('/').pop().split('?')[0];
     const dest = path.join(FONTS_DIR, filename);
     await download(url, dest);
     fontMap[url] = `/fonts/${filename}`;
@@ -115,16 +127,15 @@ async function main() {
 
   // ── 3. Build local @font-face CSS ────────────────────────────────────────────
   console.log('\nGenerating public/fonts/fonts.css...');
-  let localCSS = fontCSS;
+  const fontFaceBlocks = blocks
+    .map(b => b.replace(urlRegex, (_, remoteUrl) => `url(${fontMap[remoteUrl]})`))
+    .join('\n\n');
 
-  // Replace each remote URL with local path
-  for (const [remoteUrl, localPath] of Object.entries(fontMap)) {
-    localCSS = localCSS.split(`url(${remoteUrl})`).join(`url(${localPath})`);
+  // Any remaining remote URL would be blocked by CSP (font-src 'self') and
+  // silently fall back to system fonts. Fail the build instead.
+  if (/url\(\s*['"]?https?:/i.test(fontFaceBlocks)) {
+    throw new Error('fonts.css still references remote URLs (unexpected format from Google Fonts?)');
   }
-
-  // Strip the Google Fonts API comment/charset and keep only @font-face blocks
-  const fontFaceBlocks = [...localCSS.matchAll(/@font-face\s*\{[^}]+\}/g)]
-    .map(m => m[0]).join('\n\n');
 
   fs.writeFileSync(path.join(FONTS_DIR, 'fonts.css'), fontFaceBlocks);
   console.log('  ✓ public/fonts/fonts.css');

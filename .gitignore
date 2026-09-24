@@ -69,6 +69,7 @@ desktop.ini
 ehthumbs.db
 
 # Editor / IDE local state
+.claude/settings.local.json
 .vscode/
 .idea/
 *.swp
