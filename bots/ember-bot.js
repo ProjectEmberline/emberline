@@ -53,6 +53,8 @@ const ADULTS_ONLY_GOODBYE =
   "Emberline is for adults (18+) only, so I'm ending this chat here. Take care!";
 const TURN_LIMIT_GOODBYE =
   "We've been chatting for a while, so I'll end this conversation here. Thanks for the chat! Press next to meet someone new.";
+const EMPTY_REPLY =
+  "Sorry, I lost my train of thought there. Could you say that again?";
 const TECHNICAL_GOODBYE =
   "Sorry, I'm having a technical problem and have to end this chat. Press next to find a person.";
 
@@ -114,16 +116,29 @@ async function llmHealthy() {
   catch { return false; }
 }
 
+// Reasoning models (Gemma 4, Qwen 3, …) "think" before answering; in a chat
+// that only adds latency and can use up the whole token budget, leaving an
+// empty answer. Ask the chat template to skip it, and retry once with more
+// room if a model still returns nothing.
 async function complete(messages) {
-  const res = await fetch(LLM_URL + '/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, max_tokens: 160, temperature: 0.8 }),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
-  const data = await res.json();
-  return sanitizeReply(data.choices?.[0]?.message?.content);
+  for (const maxTokens of [160, 512]) {
+    const res = await fetch(LLM_URL + '/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages,
+        max_tokens: maxTokens,
+        temperature: 0.8,
+        chat_template_kwargs: { enable_thinking: false },
+      }),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+    const data = await res.json();
+    const text = sanitizeReply(data.choices?.[0]?.message?.content);
+    if (text) return text;
+  }
+  return '';
 }
 
 // ── One bot connection = one conversation at a time ─────────────────────────
@@ -261,9 +276,8 @@ class BotSession {
         } else {
           messages.push(...c.history.slice(-HISTORY_MESSAGES));
         }
-        const text = await complete(messages);
+        const text = (await complete(messages)) || EMPTY_REPLY; // never leave the person hanging
         if (this.convo !== c) return;               // chat ended while generating
-        if (!text) continue;
         c.history.push({ role: 'assistant', content: text });
         this.sendText(c, text);
       } while (c.unanswered && this.convo === c);
@@ -300,4 +314,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { mentionsBeingMinor, sanitizeReply, loadRules, CORE_RULES };
+module.exports = { mentionsBeingMinor, sanitizeReply, loadRules, complete, CORE_RULES };
