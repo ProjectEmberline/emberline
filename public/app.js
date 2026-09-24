@@ -172,6 +172,8 @@ function handleMessage(msg) {
       if (msg.code === 'challenge_expired') {
         appendSystemMsg('Connection challenge expired — please try again.');
         cancelSearch();
+      } else if (msg.code === 'rate_limited' || msg.code === 'message_rejected') {
+        appendSystemMsg('A message could not be delivered.');
       }
       break;
 
@@ -240,6 +242,7 @@ function handleMessage(msg) {
       break;
 
     case 'partner_left':
+      clearOutbox();
       hideTypingIndicator();
       appendSystemMsg('Your match left the conversation.');
       document.getElementById('chat-input').disabled = true;
@@ -303,15 +306,23 @@ async function enterKeyword() {
   // Fallback: if no keyword match after 10s, also join the random pool.
   // We send ALL current tags plus __random__ so the server registers us
   // in every pool simultaneously — the original keywords are NOT abandoned.
+  const joinedSocket = ws;
   window._matchFallbackTimer = setTimeout(async () => {
-    if (document.getElementById('section-waiting').style.display !== 'none') {
-      const el = document.getElementById('waiting-info');
-      if (el) el.textContent = 'No keyword match yet — trying random…';
-      let pow2;
-      try { pow2 = await getPow(); } catch(e) { return; }
-      wsSend({ type: 'join', keywords: [...tags, '__random__'], pubKey: pubKeyB64, token: pow2.token, nonce: pow2.nonce });
-    }
+    if (!stillWaiting(joinedSocket)) return;
+    const el = document.getElementById('waiting-info');
+    if (el) el.textContent = 'No keyword match yet — trying random…';
+    let pow2;
+    try { pow2 = await getPow(); } catch(e) { return; }
+    // A match may have arrived (or the user cancelled) while solving the PoW
+    if (!stillWaiting(joinedSocket)) return;
+    wsSend({ type: 'join', keywords: [...tags, '__random__'], pubKey: pubKeyB64, token: pow2.token, nonce: pow2.nonce });
   }, 10000);
+}
+
+function stillWaiting(socket) {
+  return ws === socket &&
+    !document.body.classList.contains('is-matched') &&
+    document.getElementById('section-waiting').style.display !== 'none';
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -385,12 +396,43 @@ function sendMessage() {
   // Encrypt with a random nonce; send nonce + ciphertext (both base64)
   const nonce      = nacl.randomBytes(nacl.box.nonceLength);
   const ciphertext = nacl.box.after(nacl.util.decodeUTF8(text), nonce, sharedSecret);
-  wsSend({
+  queueFrame({
     type:       'message',
     ciphertext: nacl.util.encodeBase64(ciphertext),
     nonce:      nacl.util.encodeBase64(nonce)
   });
   appendMsg(text, 'me');
+}
+
+// ── Outgoing message pacing ─────────────────────────────────────────────────
+// The server refills one message token every 300ms. Pace frames slightly
+// slower so fast typing or pasting several lines never drops a message.
+
+const SEND_INTERVAL_MS = 350;
+let _outbox      = [];
+let _outboxTimer = null;
+let _lastSentAt  = 0;
+
+function queueFrame(frame) {
+  _outbox.push(frame);
+  flushOutbox();
+}
+
+function flushOutbox() {
+  if (_outboxTimer || _outbox.length === 0) return;
+  const wait = Math.max(0, _lastSentAt + SEND_INTERVAL_MS - Date.now());
+  _outboxTimer = setTimeout(() => {
+    _outboxTimer = null;
+    wsSend(_outbox.shift());
+    _lastSentAt = Date.now();
+    flushOutbox();
+  }, wait);
+}
+
+function clearOutbox() {
+  _outbox = [];
+  clearTimeout(_outboxTimer);
+  _outboxTimer = null;
 }
 
 // ── Cancel / Leave ────────────────────────────────────────────────────────────
@@ -404,6 +446,7 @@ function resetEntry(keepTags) {
 
 function cancelSearch() {
   clearTimeout(window._matchFallbackTimer);
+  clearOutbox();
   wsSend({ type: 'leave' });
   if (ws) { ws._intentionalClose = true; ws.close(); ws = null; }
   myKeyPair    = null;
@@ -416,6 +459,7 @@ function cancelSearch() {
 }
 
 function leaveChat() {
+  clearOutbox();
   wsSend({ type: 'leave' });
   if (ws) { ws._intentionalClose = true; ws.close(); ws = null; }
   myKeyPair    = null;
@@ -437,6 +481,8 @@ async function nextConversation() {
   // There is no need to disconnect and reconnect: the same verified connection
   // can simply rejoin. This avoids the timing check, a new PoW solve, a new
   // TCP + WS handshake, and all the complexity that caused previous regressions.
+  // Queued messages were encrypted for the old partner — drop them.
+  clearOutbox();
   wsSend({ type: 'leave' });
 
   // Reset E2EE — generate a fresh keypair for the new session

@@ -80,6 +80,18 @@ const MAX_WAITING_POOL_KEYS   = 10_000;
 const MAX_CHALLENGES_STORED   = 5_000;
 const MAX_ROOMS               = 20_000;
 
+// Chat message relay. Token bucket per connection: bursts of MSG_BURST are
+// fine (network jitter can bunch frames together), sustained rate is one
+// message per MSG_REFILL_MS.
+const MSG_BURST               = 5;
+const MSG_REFILL_MS           = 300;
+// Must match maxlength on #chat-input. A JS string of N UTF-16 units encodes
+// to at most 3N UTF-8 bytes; NaCl box adds a 16-byte tag; base64 is 4/3.
+const MAX_MESSAGE_CHARS       = 300;
+const MAX_CIPHERTEXT_B64      = Math.ceil((MAX_MESSAGE_CHARS * 3 + 16) / 3) * 4; // 1224
+const CIPHERTEXT_RE           = /^[A-Za-z0-9+/]+={0,2}$/;
+const NONCE_RE                = /^[A-Za-z0-9+/]{32}$/; // 24-byte NaCl nonce
+
 const HONEYPOT_KEYWORD = '__honeypot__';
 const MAX_RECENT_PARTNERS     = 20;   // per-connection cooldown to avoid re-matching the same pair
 
@@ -281,8 +293,9 @@ wss.on('connection', (ws, req) => {
   ws._ip             = ip;
   ws.keywords        = null;
   ws.roomId          = null;
-  ws.lastMsg         = 0;
-  ws._leaving        = false;
+  ws.msgTokens       = MSG_BURST;
+  ws.msgTokensAt     = now;
+  ws._closed         = false;
   ws._connectedAt    = now;
   ws._verified       = false;
   ws._recentPartners = new Set();  // avoid re-matching the same pair on Next →
@@ -299,6 +312,11 @@ wss.on('connection', (ws, req) => {
     switch (msg.type) {
 
       case 'join': {
+
+        // Already in a conversation — the client must send 'leave' first.
+        // Without this, a late join (e.g. the random-pool fallback racing a
+        // match) would put one socket into two rooms.
+        if (ws.roomId) return;
 
         // ── Proof-of-work verification ───────────────────────────────────
         // PoW is the primary bot defence. A timing check is redundant —
@@ -372,15 +390,6 @@ wss.on('connection', (ws, req) => {
         ws.pubKey = (typeof msg.pubKey === 'string' && BASE64_RE.test(msg.pubKey))
           ? msg.pubKey.slice(0, 64)
           : null;
-
-        // Reset _leaving so handleLeave works correctly on this reused connection.
-        // nextConversation() sends leave then join on the same socket — handleLeave
-        // sets _leaving=true and decrements ipConnections. We restore both here.
-        if (ws._leaving) {
-          ws._leaving = false;
-          const n = ipConnections.get(ws._ip) || 0;
-          ipConnections.set(ws._ip, n + 1);
-        }
 
         // ── Matching algorithm ───────────────────────────────────────────
         // Scan ALL keyword pools and score every candidate by how many
@@ -489,18 +498,31 @@ wss.on('connection', (ws, req) => {
 
       case 'message': {
         if (!ws.roomId) return;
-        const now = Date.now();
-        if (now - ws.lastMsg < 300) return; // 300ms per-client send rate limit
-        ws.lastMsg = now;
         const room = rooms.get(ws.roomId);
         if (!room) return;
         const other = room.a === ws ? room.b : room.a;
-        // Only relay E2EE frames — plaintext relay intentionally absent
-        if (typeof msg.ciphertext === 'string' && typeof msg.nonce === 'string') {
-          const ct = msg.ciphertext.slice(0, 800);
-          const nn = msg.nonce.slice(0, 50);
-          if (ct && nn) send(other, { type: 'message', ciphertext: ct, nonce: nn });
+
+        // Only relay E2EE frames — plaintext relay intentionally absent.
+        // Oversized or malformed frames are rejected, never truncated: a
+        // truncated ciphertext just fails authentication on the other side.
+        const { ciphertext, nonce } = msg;
+        if (typeof ciphertext !== 'string' || typeof nonce !== 'string' ||
+            ciphertext.length > MAX_CIPHERTEXT_B64 ||
+            !CIPHERTEXT_RE.test(ciphertext) || !NONCE_RE.test(nonce)) {
+          send(ws, { type: 'error', code: 'message_rejected' });
+          return;
         }
+
+        const now = Date.now();
+        ws.msgTokens   = Math.min(MSG_BURST, ws.msgTokens + (now - ws.msgTokensAt) / MSG_REFILL_MS);
+        ws.msgTokensAt = now;
+        if (ws.msgTokens < 1) {
+          send(ws, { type: 'error', code: 'rate_limited' });
+          return;
+        }
+        ws.msgTokens -= 1;
+
+        send(other, { type: 'message', ciphertext, nonce });
         break;
       }
 
@@ -514,7 +536,7 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'leave': {
-        handleLeave(ws);
+        leaveSession(ws);
         break;
       }
 
@@ -522,25 +544,31 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  ws.on('close', () => handleLeave(ws));
-  ws.on('error', () => handleLeave(ws));
+  ws.on('close', () => handleClose(ws));
+  ws.on('error', () => handleClose(ws));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cleanup on leave / close / error
 // ─────────────────────────────────────────────────────────────────────────────
+// A 'leave' message ends the current session (pool membership or room) but
+// keeps the socket open for Next →. Only an actual socket close releases the
+// per-IP connection slot, so an open socket always counts against the cap.
 
-function handleLeave(ws) {
-  if (ws._leaving) return;
-  ws._leaving = true;
+function handleClose(ws) {
+  if (ws._closed) return;
+  ws._closed = true;
 
-  // Decrement concurrent connection count
   if (ws._ip) {
     const n = (ipConnections.get(ws._ip) || 1) - 1;
     if (n <= 0) ipConnections.delete(ws._ip);
     else        ipConnections.set(ws._ip, n);
   }
 
+  leaveSession(ws);
+}
+
+function leaveSession(ws) {
   // Remove from any waiting pool
   if (ws.keywords) {
     ws.keywords.forEach(kw => {
@@ -555,6 +583,7 @@ function handleLeave(ws) {
     const room = rooms.get(ws.roomId);
     if (room) {
       const other = room.a === ws ? room.b : room.a;
+      other.roomId = null; // room is gone for both sides; lets the partner rejoin
       send(other, { type: 'partner_left' });
     }
     rooms.delete(ws.roomId);
@@ -570,7 +599,7 @@ function handleLeave(ws) {
 const heartbeat = setInterval(() => {
   let zombies = 0;
   wss.clients.forEach(ws => {
-    if (!ws.isAlive) { zombies++; handleLeave(ws); ws.terminate(); return; }
+    if (!ws.isAlive) { zombies++; handleClose(ws); ws.terminate(); return; }
     ws.isAlive = false;
     ws.ping();
   });
@@ -654,7 +683,7 @@ app.post('/report', (req, res) => {
 // Effective dates — update manually when the corresponding policy changes.
 // Hardcoding avoids the bug where `new Date()` made the "effective date"
 // slide forward every time someone loaded the page.
-const POLICY_EFFECTIVE_DATE = '17 April 2026';
+const POLICY_EFFECTIVE_DATE = '24 September 2026';
 const TERMS_EFFECTIVE_DATE  = '17 April 2026';
 
 app.get('/privacy', (req, res) => {
@@ -681,7 +710,7 @@ app.get('/privacy', (req, res) => {
 <h2>What we do not collect</h2>
 <p>We do not collect names, email addresses, phone numbers, or any other identifying information. We do not require registration. We do not store chat messages — messages are relayed in real time using end-to-end encryption and are never written to disk. We have no ability to retrieve or reconstruct past conversations.</p>
 <h2>What we do collect</h2>
-<p>When a user submits an abuse report, we record the report timestamp and reason category only. No message content, IP address, or user identity is included. This information is retained for a maximum of 90 days.</p>
+<p>When a user submits an abuse report, we record the report timestamp, the reason category, and — only if the reporter chooses to write them — up to 500 characters of free-text details. No chat messages are attached, and no IP address or user identity is recorded with the report. Please do not include personal information in the details. Reports are retained for a maximum of 90 days.</p>
 <h2>IP addresses</h2>
 <p>We do not log IP addresses in association with chat content, reports, keywords, or any durable user record. An IP-based abuse defense runs at the connection layer: when a client trips a rate limit, fails a proof-of-work check, or hits a honeypot, an entry is written to an abuse log containing only a timestamp, the triggered rule, and the source IP. This log feeds a ban system that temporarily blocks repeat offenders and is rotated after 90 days. It is never cross-referenced against reports, conversations, or keywords — and cannot be, because none of those are stored. This is the minimum defense a fully anonymous service requires to remain functional.</p>
 <h2>End-to-end encryption</h2>

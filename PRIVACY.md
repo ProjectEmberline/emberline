@@ -2,7 +2,7 @@
 
 > This document mirrors the Privacy Policy served at [emberline.ch/privacy](https://emberline.ch/privacy). If the two ever diverge, the served version is canonical. The repository copy exists for audit, offline reference, and version history.
 
-**Effective date:** 17 April 2026 · **Jurisdiction:** Switzerland
+**Effective date:** 24 September 2026 · **Jurisdiction:** Switzerland
 
 Emberline is an anonymous, ephemeral chat platform. This policy describes what data we collect, what we do not collect, and your rights under Swiss law (nFADP).
 
@@ -12,7 +12,7 @@ We do not collect names, email addresses, phone numbers, or any other identifyin
 
 ## What we do collect
 
-When a user submits an abuse report, we record the report timestamp and reason category only. No message content, IP address, or user identity is included. This information is retained for a maximum of 90 days.
+When a user submits an abuse report, we record the report timestamp, the reason category, and — only if the reporter chooses to write them — up to 500 characters of free-text details. No chat messages are attached, and no IP address or user identity is recorded with the report. Please do not include personal information in the details. Reports are retained for a maximum of 90 days.
 
 ## IP addresses
 

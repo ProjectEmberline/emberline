@@ -34,7 +34,7 @@ server.js  (Node.js · Express + ws, inside Docker container)
 app.js     (browser — single JS file, no framework)
 
 Persistent files (append-only, no message content):
-  reports.log   reason + server timestamp only (no IPs)
+  reports.log   reason + optional reporter-written details + server timestamp (no IPs)
   abuse.log     event type + timestamp + IP  (for Fail2Ban)
 ```
 
