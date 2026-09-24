@@ -10,6 +10,14 @@
  *   - Reports are written to reports.log (reason + timestamp only)
  *   - Abuse events written to abuse.log (reason + timestamp only, for Fail2Ban)
  *   - Privacy policy served at /privacy
+ *
+ * Environment:
+ *   PORT         listen port (default 3000)
+ *   LOG_DIR      directory for abuse.log / reports.log (default: project root).
+ *                Must never be inside PUBLIC_DIR.
+ *   TRUST_PROXY  number of reverse proxies in front of this process
+ *                (default 1). Used to pick the real client IP out of
+ *                X-Forwarded-For. Set to 0 if clients connect directly.
  */
 
 'use strict';
@@ -23,6 +31,26 @@ const crypto  = require('crypto');
 const { execSync } = require('child_process');
 
 const PORT = process.env.PORT || 3000;
+
+// Only this directory is ever served over HTTP. Everything else in the project
+// root (server source, node_modules, .git, logs, BUILD_VERSION) stays private.
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+// Logs are written outside PUBLIC_DIR so they can never be fetched by URL.
+const LOG_DIR = path.resolve(process.env.LOG_DIR || __dirname);
+if (LOG_DIR === PUBLIC_DIR || LOG_DIR.startsWith(PUBLIC_DIR + path.sep)) {
+  console.error('[config] LOG_DIR must not be inside the public directory');
+  process.exit(1);
+}
+
+// Number of trusted reverse-proxy hops. Each proxy appends the address it
+// received the request from to X-Forwarded-For, so the real client IP is the
+// entry TRUST_PROXY positions from the right (counting the socket address).
+// Anything further left was supplied by the client and cannot be trusted.
+const TRUST_PROXY = (() => {
+  const n = parseInt(process.env.TRUST_PROXY ?? '1', 10);
+  return Number.isInteger(n) && n >= 0 ? n : 1;
+})();
 
 const app    = express();
 const server = http.createServer(app);
@@ -89,8 +117,13 @@ const flaggedIPs     = new Map();  // ip → flaggedAt timestamp
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getIP(req) {
-  const fwd = req.headers['x-forwarded-for'];
-  return (fwd ? fwd.split(',')[0] : req.socket?.remoteAddress || 'unknown').trim();
+  const fwd   = req.headers['x-forwarded-for'];
+  const chain = (typeof fwd === 'string' ? fwd.split(',') : [])
+    .map(s => s.trim())
+    .filter(Boolean);
+  chain.push(req.socket?.remoteAddress || 'unknown');
+  // Walk back TRUST_PROXY hops from the socket; clamp to the leftmost entry.
+  return chain[Math.max(0, chain.length - 1 - TRUST_PROXY)];
 }
 
 function send(ws, obj) {
@@ -102,7 +135,8 @@ function randomId() {
 }
 
 // Abuse log — for Fail2Ban pattern matching only. No content, no identity.
-const ABUSE_LOG = path.join(__dirname, 'abuse.log');
+const ABUSE_LOG   = path.join(LOG_DIR, 'abuse.log');
+const REPORTS_LOG = path.join(LOG_DIR, 'reports.log');
 function logAbuse(reason, ip) {
   const line = `${new Date().toISOString()} [${reason}] ip=${ip}\n`;
   fs.appendFile(ABUSE_LOG, line, err => {
@@ -606,7 +640,7 @@ app.post('/report', (req, res) => {
     // deliberately: no IP, no room ID, no user identity
   }) + '\n';
 
-  fs.appendFile(path.join(__dirname, 'reports.log'), entry, err => {
+  fs.appendFile(REPORTS_LOG, entry, err => {
     if (err) console.error('[report] failed to write log:', err.message);
   });
 
@@ -767,7 +801,7 @@ const BUILD_FOOTER_FRAGMENT = BUILD_VERSION === 'dev'
 // serve the raw template with unreplaced placeholders.
 const INDEX_SOURCE = (() => {
   try {
-    return fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8')
+    return fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
       .replace(/__BUILD_FOOTER__/g, BUILD_FOOTER_FRAGMENT);
   } catch (err) {
     console.error('[index] failed to read index.html template:', err.message);
@@ -814,7 +848,7 @@ function buildShellList() {
   const files = [...SHELL_STATIC];
   // Enumerate woff2 files dynamically — Google Fonts generates hashed names
   try {
-    const fontsDir = path.join(__dirname, 'fonts');
+    const fontsDir = path.join(PUBLIC_DIR, 'fonts');
     for (const f of fs.readdirSync(fontsDir)) {
       if (f.endsWith('.woff2')) files.push('/fonts/' + f);
     }
@@ -823,7 +857,7 @@ function buildShellList() {
   // Filter to files that exist on disk, so cache.addAll() doesn't fail install
   return files.filter(url => {
     const rel = url === '/' ? 'index.html' : url.replace(/^\//, '');
-    try { fs.accessSync(path.join(__dirname, rel)); return true; }
+    try { fs.accessSync(path.join(PUBLIC_DIR, rel)); return true; }
     catch { return false; }
   });
 }
@@ -834,14 +868,14 @@ const CACHE_VERSION = (() => {
   const h = crypto.createHash('sha256');
   for (const url of SHELL_LIST) {
     const rel = url === '/' ? 'index.html' : url.replace(/^\//, '');
-    try { h.update(fs.readFileSync(path.join(__dirname, rel))); } catch {}
+    try { h.update(fs.readFileSync(path.join(PUBLIC_DIR, rel))); } catch {}
   }
   return h.digest('hex').slice(0, 8);
 })();
 
 const SW_SOURCE = (() => {
   try {
-    return fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8')
+    return fs.readFileSync(path.join(PUBLIC_DIR, 'sw.js'), 'utf8')
       .replace('__CACHE_VERSION__', CACHE_VERSION)
       .replace('__SHELL_LIST__', JSON.stringify(SHELL_LIST));
   } catch (err) {
@@ -858,10 +892,12 @@ app.get('/sw.js', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Static files
+// Static files — PUBLIC_DIR only. Dotfiles are denied explicitly.
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.use(express.static(path.join(__dirname), {
+app.use(express.static(PUBLIC_DIR, {
+  dotfiles: 'deny',
+  index: false, // '/' is served by the templated route above
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.js'))   res.setHeader('Content-Type', 'application/javascript');
     if (filePath.endsWith('.css'))  res.setHeader('Content-Type', 'text/css');
@@ -875,8 +911,10 @@ app.use(express.static(path.join(__dirname), {
 
 server.listen(PORT, () => {
   console.log(`Emberline listening on http://localhost:${PORT}`);
-  console.log(`Reports → ${path.join(__dirname, 'reports.log')}`);
-  console.log(`Abuse   → ${path.join(__dirname, 'abuse.log')}`);
+  console.log(`Public  → ${PUBLIC_DIR}`);
+  console.log(`Reports → ${REPORTS_LOG}`);
+  console.log(`Abuse   → ${ABUSE_LOG}`);
+  console.log(`Proxy   → trusting ${TRUST_PROXY} hop(s) of X-Forwarded-For`);
   console.log(`SW      → cache=${CACHE_VERSION} files=${SHELL_LIST.length}`);
   console.log(`BUILD   → ${BUILD_VERSION_SHORT}${BUILD_VERSION === 'dev' ? '' : ` (${BUILD_VERSION})`}`);
 });

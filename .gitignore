@@ -13,9 +13,9 @@
 node_modules/
 
 # Assets fetched by setup-assets.js (run once after clone — never committed)
-fonts/*.woff2
-fonts/fonts.css
-vendor/*.min.js
+public/fonts/*.woff2
+public/fonts/fonts.css
+public/vendor/*.min.js
 
 # Operational runtime logs — must never be committed
 *.log

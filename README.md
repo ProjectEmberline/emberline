@@ -54,6 +54,14 @@ node server.js
 
 The server listens on port 3000. Put HTTPS in front of it, update `ALLOWED_WS_ORIGINS` in `server.js` to your domain, and you are running.
 
+Only the `public/` directory is served over HTTP. Configuration is via environment variables:
+
+| Variable      | Default        | Purpose |
+|---------------|----------------|---------|
+| `PORT`        | `3000`         | Listen port |
+| `LOG_DIR`     | project root   | Where `abuse.log` and `reports.log` are written. Must not be inside `public/`. |
+| `TRUST_PROXY` | `1`            | Number of reverse proxies in front of the server. The client IP is taken from `X-Forwarded-For` that many hops back from the socket; anything further left is client-supplied and ignored. Set to `0` if clients connect directly. Getting this wrong either lets clients spoof their IP (too high) or makes every client look like your proxy (too low). |
+
 Production considerations — TLS termination, WireGuard, Fail2Ban integration, log rotation, security headers — are documented in [ARCHITECTURE.md §11](./ARCHITECTURE.md). Deployment artifacts for the canonical instance (Dockerfile, compose configuration) are not published in this repository; a plain Node setup on any Linux host is sufficient to run the project.
 
 ---
@@ -90,12 +98,15 @@ Emberline is built around a specific threat model — casual privacy from third 
 
 ```
 ├── server.js              Node.js WebSocket + HTTP server
-├── app.js                 Client-side logic, no framework
-├── sw.js                  Service worker template (see ARCHITECTURE.md §10)
 ├── setup-assets.js        One-time font + crypto library downloader
-├── index.html             Single-page frontend
-├── manifest.json          PWA manifest
 ├── package.json
+├── public/                The only directory served over HTTP
+│   ├── index.html         Single-page frontend
+│   ├── app.js             Client-side logic, no framework
+│   ├── sw.js              Service worker template (see ARCHITECTURE.md §10)
+│   ├── manifest.json      PWA manifest
+│   ├── sitemap.xml
+│   └── icons/
 ├── ARCHITECTURE.md        Full technical architecture and decision framework
 ├── SECURITY.md            Threat model and responsible disclosure
 ├── PRIVACY.md             Privacy policy (mirror of /privacy endpoint)
@@ -103,7 +114,7 @@ Emberline is built around a specific threat model — casual privacy from third 
 └── LICENSE                AGPL-3.0
 ```
 
-Generated files (`fonts/*.woff2`, `vendor/*.min.js`) are fetched by `setup-assets.js` at install time and are not committed to the repository.
+Generated files (`public/fonts/*.woff2`, `public/vendor/*.min.js`) are fetched by `setup-assets.js` at install time and are not committed to the repository.
 
 ---
 

@@ -52,25 +52,31 @@ Persistent files (append-only, no message content):
 
 ```
 /
-├── index.html          — Single-page frontend (CSS inline, JS via src)
-├── app.js              — All client-side logic (~680 lines)
-├── server.js           — Node.js WebSocket + HTTP server (~815 lines)
+├── server.js           — Node.js WebSocket + HTTP server
 ├── package.json        — Dependencies: express ^4, ws ^8
 ├── setup-assets.js     — One-time asset downloader (fonts + NaCl)
-├── manifest.json       — PWA manifest
-├── sw.js               — Service worker (caches app shell)
-├── reports.log         — Abuse reports (auto-created)
-├── abuse.log           — Fail2Ban feed (auto-created)
-├── icons/
-│   ├── icon-192.png    — PWA icon (ember flame)
-│   └── icon-512.png    — PWA icon large
-├── fonts/
-│   ├── fonts.css
-│   └── *.woff2         — Unbounded + Inter (self-hosted)
-└── vendor/
-    ├── nacl-fast.min.js
-    └── nacl-util.min.js
+├── reports.log         — Abuse reports (auto-created in LOG_DIR)
+├── abuse.log           — Fail2Ban feed (auto-created in LOG_DIR)
+└── public/             — The ONLY directory served over HTTP
+    ├── index.html      — Single-page frontend (CSS inline, JS via src)
+    ├── app.js          — All client-side logic
+    ├── manifest.json   — PWA manifest
+    ├── sw.js           — Service worker template (caches app shell)
+    ├── sitemap.xml
+    ├── icons/
+    │   ├── icon-192.png — PWA icon (ember flame)
+    │   └── icon-512.png — PWA icon large
+    ├── fonts/
+    │   ├── fonts.css
+    │   └── *.woff2     — Unbounded + Inter (self-hosted)
+    └── vendor/
+        ├── nacl-fast.min.js
+        └── nacl-util.min.js
 ```
+
+`express.static` is rooted at `public/` with dotfiles denied. Server source, `node_modules/`, `.git/`, `BUILD_VERSION` and the log files are never reachable by URL. Logs default to the project root and can be moved with `LOG_DIR`; the server refuses to start if `LOG_DIR` points inside `public/`.
+
+**Client IP.** `getIP()` does not trust the leftmost `X-Forwarded-For` entry — clients can set that header themselves. It walks back `TRUST_PROXY` hops (default `1`) from the socket address, matching the number of reverse proxies that append to the header. The canonical deployment has exactly one (Caddy on the VPS).
 
 ---
 

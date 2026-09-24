@@ -11,12 +11,12 @@ const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
 
-const FONTS_DIR = path.join(__dirname, 'fonts');
-const JS_DIR    = path.join(__dirname, 'vendor');
+const FONTS_DIR = path.join(__dirname, 'public', 'fonts');
+const JS_DIR    = path.join(__dirname, 'public', 'vendor');
 
 // Create directories
-if (!fs.existsSync(FONTS_DIR)) fs.mkdirSync(FONTS_DIR);
-if (!fs.existsSync(JS_DIR))    fs.mkdirSync(JS_DIR);
+if (!fs.existsSync(FONTS_DIR)) fs.mkdirSync(FONTS_DIR, { recursive: true });
+if (!fs.existsSync(JS_DIR))    fs.mkdirSync(JS_DIR, { recursive: true });
 
 // Robust file download:
 //   - rejects on any non-2xx status (the original would write a 404 HTML body
@@ -83,13 +83,13 @@ async function main() {
     'https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js',
     path.join(JS_DIR, 'nacl-fast.min.js')
   );
-  console.log('  ✓ vendor/nacl-fast.min.js');
+  console.log('  ✓ public/vendor/nacl-fast.min.js');
 
   await download(
     'https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js',
     path.join(JS_DIR, 'nacl-util.min.js')
   );
-  console.log('  ✓ vendor/nacl-util.min.js');
+  console.log('  ✓ public/vendor/nacl-util.min.js');
 
   // ── 2. Google Fonts ──────────────────────────────────────────────────────────
   console.log('\nFetching font CSS...');
@@ -110,11 +110,11 @@ async function main() {
     const dest = path.join(FONTS_DIR, filename);
     await download(url, dest);
     fontMap[url] = `/fonts/${filename}`;
-    console.log(`  ✓ fonts/${filename}`);
+    console.log(`  ✓ public/fonts/${filename}`);
   }
 
   // ── 3. Build local @font-face CSS ────────────────────────────────────────────
-  console.log('\nGenerating fonts/fonts.css...');
+  console.log('\nGenerating public/fonts/fonts.css...');
   let localCSS = fontCSS;
 
   // Replace each remote URL with local path
@@ -127,19 +127,20 @@ async function main() {
     .map(m => m[0]).join('\n\n');
 
   fs.writeFileSync(path.join(FONTS_DIR, 'fonts.css'), fontFaceBlocks);
-  console.log('  ✓ fonts/fonts.css');
+  console.log('  ✓ public/fonts/fonts.css');
 
   console.log('\nAll assets downloaded. Your folder structure:');
   console.log('  (project root)');
-  console.log('  ├── index.html');
   console.log('  ├── server.js');
   console.log('  ├── package.json');
-  console.log('  ├── vendor/');
-  console.log('  │   ├── nacl-fast.min.js');
-  console.log('  │   └── nacl-util.min.js');
-  console.log('  └── fonts/');
-  console.log('      ├── fonts.css');
-  console.log('      └── [woff2 font files]');
+  console.log('  └── public/');
+  console.log('      ├── index.html');
+  console.log('      ├── vendor/');
+  console.log('      │   ├── nacl-fast.min.js');
+  console.log('      │   └── nacl-util.min.js');
+  console.log('      └── fonts/');
+  console.log('          ├── fonts.css');
+  console.log('          └── [woff2 font files]');
   console.log('\nRestart your server and you\'re fully self-hosted.');
 }
 
