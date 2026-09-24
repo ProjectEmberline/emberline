@@ -1,14 +1,14 @@
 @echo off
-REM ─────────────────────────────────────────────────────────────────────────────
-REM Emberline — pre-deploy: write current git commit hash to BUILD_VERSION
-REM ─────────────────────────────────────────────────────────────────────────────
+REM -----------------------------------------------------------------------------
+REM Emberline - pre-deploy: write current git commit hash to BUILD_VERSION
+REM -----------------------------------------------------------------------------
 REM Run this from C:\emberline before the scp-to-Pi step. It writes the
 REM current HEAD commit hash to BUILD_VERSION, which server.js reads at
 REM startup and displays in the page footer linked to GitHub.
 REM
 REM The deploy workflow becomes:
 REM   1. git push origin main     (so the commit is actually on GitHub)
-REM   2. build-version.bat        (this script — writes BUILD_VERSION)
+REM   2. build-version.bat        (this script - writes BUILD_VERSION)
 REM   3. scp the files to the Pi  (include BUILD_VERSION)
 REM   4. docker compose build && docker compose up -d on the Pi
 REM
@@ -27,7 +27,7 @@ git diff-index --quiet HEAD --
 if errorlevel 1 (
   echo.
   echo ERROR: working tree has uncommitted changes.
-  echo Commit or stash them before deploying — the footer must point to
+  echo Commit or stash them before deploying - the footer must point to
   echo a commit that actually exists on GitHub.
   echo.
   git status --short
