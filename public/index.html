@@ -329,6 +329,25 @@
 
   .waiting-count { font-size: 0.75rem; color: var(--muted); margin-top: 12px; font-style: italic; }
 
+  /* ── Optional AI chat (opt-in, always labeled) ── */
+  .ai-offer { margin-top: 20px; max-width: 320px; }
+  .ai-offer .btn { border: 1px solid var(--accent); color: var(--accent); padding: 8px 16px; }
+  .ai-offer .btn:hover { background: var(--accent-light); color: var(--accent); }
+  .waiting .ai-offer-note { font-size: 0.75rem; color: var(--muted); margin: 8px 0 0; line-height: 1.5; }
+  .ai-banner {
+    display: none;
+    margin: 0 0 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    text-align: center;
+  }
+  .ai-banner strong { font-family: 'Unbounded', sans-serif; font-weight: 600; letter-spacing: 0.04em; margin-right: 6px; }
+  body.is-ai .ai-banner { display: block; }
+
   .chat-box {
     flex: 1;
     min-height: 0;
@@ -653,6 +672,10 @@
         <p class="waiting-label">Matching on any of these</p>
         <div id="display-keyword"></div>
         <p id="waiting-info" class="waiting-count"></p>
+        <div id="ai-offer" class="ai-offer" hidden>
+          <button class="btn btn-ghost" id="btn-ai">Chat with an AI instead</button>
+          <p class="ai-offer-note">An AI model run by Emberline — not a person. It reads your keywords and messages to reply. Nothing is stored.</p>
+        </div>
       </div>
       <button class="btn btn-ghost" id="btn-cancel">Cancel</button>
     </div>
@@ -661,6 +684,7 @@
     <div id="section-matched">
 
       <div class="chat-column-grow">
+        <div class="ai-banner" id="ai-banner" role="note"><strong>AI</strong>You are chatting with an AI model run by Emberline, not a person.</div>
         <div class="chat-box" id="chat-box">
           <div class="msg system">Finding your match…</div>
         </div>

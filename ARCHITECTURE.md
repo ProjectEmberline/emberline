@@ -282,6 +282,12 @@ All frames are JSON, max 4096 bytes.
 
 // Leave room or cancel search
 { "type": "leave" }
+
+// Opt in to an AI chat while waiting (verified socket only)
+{ "type": "join_ai", "pubKey": "<base64>" }
+
+// Bots only (authenticated with BOT_TOKEN): offer to take one conversation
+{ "type": "bot_ready", "pubKey": "<base64>" }
 ```
 
 ### Server → Client
@@ -294,9 +300,26 @@ All frames are JSON, max 4096 bytes.
 { "type": "partner_left" }
 { "type": "error",        "code": "challenge_expired" }
 { "type": "error",        "code": "server_busy" }
+{ "type": "error",        "code": "ai_unavailable" }
+
+// AI chat: the human side always gets ai: true; the bot also gets the keywords
+{ "type": "matched",      "ai": true, "matchedKeywords": [], "partnerPubKey": "<base64>" }
+{ "type": "matched",      "ai": true, "keywords": ["word"], "partnerPubKey": "<base64>" }
 ```
 
 **Typing indicator:** The server blindly relays `{ type: "typing" }` to the partner. No content, no logging. Client-side throttle ensures at most one event per 2 seconds. The receiving client shows "typing..." which auto-hides after 3 seconds of no events, or immediately when a message arrives or the partner leaves.
+
+---
+
+### 7.1 Optional AI chat
+
+Design constraints, in order: **the user must always know**, then **nobody gets an AI unless they asked**, then privacy.
+
+- **Authentication.** A bot sends `Authorization: Bearer <BOT_TOKEN>` on the WebSocket upgrade. Browsers cannot set that header, so no page can pose as a bot, and a bot without the token is an ordinary (unverified) client. Bots skip per-IP limits and bans and never count towards `/count`.
+- **Separate pool.** Bots never enter keyword pools; they announce themselves with `bot_ready` (one conversation, fresh key each time). A human is only paired with a bot after sending `join_ai` from the waiting screen, and the server — not the bot — adds `ai: true` to the human's `matched` event.
+- **Labeling.** The client shows a persistent "AI — not a person" banner, a labeled first line, and "AI is writing…" instead of "typing…". Messages still use E2EE; the AI is the other endpoint, so it necessarily reads them (stated in the privacy policy).
+- **Availability.** The waiting screen offers AI chat after 10s only if `/count` says `ai: true`. The bot only sends `bot_ready` while its model answers `/health`, and withdraws (`leave`) if the model goes down while idle.
+- **Bot-side safeguards** (`bots/ember-bot.js`, independent of the model and of `rules.txt`): `CORE_RULES` appended to every system prompt; the chat ends when a user states they are under 18 (en/de/fr/it patterns); 40-message cap; replies stripped to plain text under 280 chars; conversation kept in memory only and never logged.
 
 ---
 
@@ -311,7 +334,7 @@ All frames are JSON, max 4096 bytes.
 | `GET` | `/terms` | Terms of service page | API budget |
 | `GET` | `/*` | Static files (incl. `.json`) | Static budget |
 
-`/count` returns the real number of connected WebSocket clients, no inflation or social-proof adjustment. The client polls this endpoint only while the user is on the entry screen (not while waiting or chatting).
+`/count` returns `{ count, ai }`: the real number of connected people (bots excluded), no inflation or social-proof adjustment, and whether an AI chat can be offered right now. The client polls this endpoint only while the user is on the entry screen (not while waiting or chatting).
 
 ---
 

@@ -20,11 +20,15 @@ We do not log IP addresses in association with chat content, reports, keywords, 
 
 ## End-to-end encryption
 
-All messages are encrypted on your device using the NaCl box construction (Curve25519 + XSalsa20 + Poly1305). Only the two participants can decrypt messages. The server relays encrypted data it cannot read.
+All messages are encrypted on your device using the NaCl box construction (Curve25519 + XSalsa20 + Poly1305). Only the two participants can decrypt messages. The server relays encrypted data it cannot read. In an optional AI chat, the AI is the other participant (see below).
+
+## Optional AI chat
+
+If no one matches your keywords right away, the waiting screen may offer to let you chat with an AI instead. This only happens if you click that button, and an AI chat is labeled as such for its entire duration. The AI is a language model running on hardware operated by Emberline. It is the other participant in the conversation, so to reply it decrypts your messages and receives the keywords you entered. AI conversations are held in memory only while the chat lasts; they are not stored, logged, or used to train models. The AI can be wrong or say strange things — do not rely on it for advice, and do not share personal information with it.
 
 ## Keywords
 
-Keywords are held temporarily in server memory during matching and discarded immediately after a match is made or the session ends.
+Keywords are held temporarily in server memory during matching and discarded immediately after a match is made or the session ends. If you choose an AI chat, your keywords are passed to the AI as conversation topics and discarded when the chat ends.
 
 ## Cookies, tracking, and storage
 

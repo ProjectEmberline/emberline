@@ -75,3 +75,6 @@ ehthumbs.db
 *.swp
 *.swo
 *~
+
+# AI bot shared secret (bots/ember-bot.js)
+bots/.bot-token

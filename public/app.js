@@ -176,6 +176,10 @@ function handleMessage(msg) {
       if (msg.code === 'challenge_expired') {
         appendSystemMsg('Connection challenge expired — please try again.');
         cancelSearch();
+      } else if (msg.code === 'ai_unavailable') {
+        const info = document.getElementById('waiting-info');
+        if (info) info.textContent = 'The AI is busy right now — still looking for a person…';
+        startAiOffer();
       } else if (msg.code === 'rate_limited' || msg.code === 'message_rejected') {
         appendSystemMsg('A message could not be delivered.');
       }
@@ -183,7 +187,9 @@ function handleMessage(msg) {
 
     case 'matched':
       clearTimeout(window._matchFallbackTimer);
+      stopAiOffer();
       document.body.classList.add('is-matched');
+      document.body.classList.toggle('is-ai', msg.ai === true);
       sharedSecret = null;
       if (typeof msg.partnerPubKey === 'string' && myKeyPair) {
         // A malformed key must not throw out of the handler and freeze the UI
@@ -200,7 +206,9 @@ function handleMessage(msg) {
       chatBox.innerHTML = '';
       const sysDiv = document.createElement('div');
       sysDiv.className = 'msg system';
-      if (isRandom) {
+      if (msg.ai === true) {
+        sysDiv.textContent = 'Connected to an AI — not a person. It reads your keywords and messages to reply and can be wrong. Nothing is stored.';
+      } else if (isRandom) {
         sysDiv.textContent = 'Connected to a random ember.';
       } else if (matchedKws.length === 1) {
         sysDiv.textContent = 'Match found on ';
@@ -317,6 +325,7 @@ async function enterKeyword() {
   }
 
   wsSend({ type: 'join', keywords: tags, pubKey: pubKeyB64, token: pow.token, nonce: pow.nonce });
+  startAiOffer();
 
   // Fallback: if no keyword match after 10s, also join the random pool.
   // We send ALL current tags plus __random__ so the server registers us
@@ -374,7 +383,7 @@ function showTypingIndicator() {
     el = document.createElement('div');
     el.id = 'typing-indicator';
     el.className = 'typing-indicator';
-    el.textContent = 'typing...';
+    el.textContent = document.body.classList.contains('is-ai') ? 'AI is writing…' : 'typing...';
   }
   el.style.display = 'block';
   box.appendChild(el);
@@ -461,6 +470,7 @@ function resetEntry(keepTags) {
 
 function cancelSearch() {
   clearTimeout(window._matchFallbackTimer);
+  stopAiOffer();
   clearOutbox();
   wsSend({ type: 'leave' });
   if (ws) { ws._intentionalClose = true; ws.close(); ws = null; }
@@ -480,7 +490,7 @@ function leaveChat() {
   myKeyPair    = null;
   sharedSecret = null;
   hideTypingIndicator();
-  document.body.classList.remove('is-matched');
+  document.body.classList.remove('is-matched', 'is-ai');
   document.getElementById('chat-input').disabled = false;
   document.getElementById('btn-send').disabled = false;
   resetChatBox();
@@ -505,11 +515,12 @@ async function nextConversation() {
   sharedSecret = null;
 
   hideTypingIndicator();
-  document.body.classList.remove('is-matched');
+  document.body.classList.remove('is-matched', 'is-ai');
   document.getElementById('chat-input').disabled = false;
   document.getElementById('btn-send').disabled = false;
   resetChatBox();
   clearTimeout(window._matchFallbackTimer);
+  stopAiOffer();
 
   if (tags.length === 0) { show('entry'); return; }
 
@@ -531,6 +542,7 @@ async function nextConversation() {
   // Reuse the already-verified connection — send join immediately
   const pubKeyB64 = nacl.util.encodeBase64(myKeyPair.publicKey);
   wsSend({ type: 'join', keywords: tags, pubKey: pubKeyB64 });
+  startAiOffer();
 
   window._matchFallbackTimer = setTimeout(async () => {
     if (document.getElementById('section-waiting').style.display !== 'none') {
@@ -539,6 +551,38 @@ async function nextConversation() {
       wsSend({ type: 'join', keywords: [...tags, '__random__'], pubKey: pubKeyB64 });
     }
   }, 10000);
+}
+
+// ── Optional AI chat ─────────────────────────────────────────────────────────
+// Only ever on explicit request. After 10s without a human match, if an AI
+// is available, the waiting screen offers it (re-checked every 10s).
+
+let _aiOfferTimer = null;
+
+function startAiOffer() {
+  stopAiOffer();
+  const socket = ws;
+  const check = async () => {
+    if (!stillWaiting(socket)) return stopAiOffer();
+    try {
+      const { ai } = await (await fetch('/count')).json();
+      if (stillWaiting(socket)) document.getElementById('ai-offer').hidden = !ai;
+    } catch {}
+    _aiOfferTimer = setTimeout(check, 10000);
+  };
+  _aiOfferTimer = setTimeout(check, 10000);
+}
+
+function stopAiOffer() {
+  clearTimeout(_aiOfferTimer);
+  _aiOfferTimer = null;
+  document.getElementById('ai-offer').hidden = true;
+}
+
+function chooseAi() {
+  if (!ws || !myKeyPair) return;
+  stopAiOffer();
+  wsSend({ type: 'join_ai', pubKey: nacl.util.encodeBase64(myKeyPair.publicKey) });
 }
 
 // ── Keyboard listeners ────────────────────────────────────────────────────────
@@ -669,6 +713,7 @@ document.getElementById('btn-send').addEventListener('click', sendMessage);
 document.getElementById('btn-leave').addEventListener('click', leaveChat);
 document.getElementById('btn-report').addEventListener('click', openReport);
 document.getElementById('btn-next').addEventListener('click', nextConversation);
+document.getElementById('btn-ai').addEventListener('click', chooseAi);
 document.getElementById('btn-report-cancel').addEventListener('click', closeReport);
 document.getElementById('btn-report-submit').addEventListener('click', submitReport);
 document.getElementById('chat-input').addEventListener('keydown', e => {

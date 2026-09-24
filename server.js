@@ -20,6 +20,8 @@
  *                X-Forwarded-For. Set to 0 if clients connect directly.
  *   BAN_ALLOWLIST  comma-separated IPs that are never auto-banned
  *   MAX_CONNS_PER_IP  concurrent WebSocket connections per IP (default 20)
+ *   BOT_TOKEN    shared secret for the operator's AI chat bots (bots/ember-bot.js).
+ *                Unset = AI chat disabled. Never commit it.
  */
 
 'use strict';
@@ -138,6 +140,11 @@ const httpApiRate    = new Map();  // ip → { count, resetAt }
 const httpStaticRate = new Map();  // ip → { count, resetAt }
 const reportThrottle = new Map();  // ip → { count, resetAt }
 const challengeRate  = new Map();  // ip → { count, resetAt }
+// Operator-run AI chat bots (see bots/). Humans are only ever matched with a
+// bot after explicitly opting in, and the match is always labeled as AI.
+const botSockets     = new Set();  // every authenticated bot connection
+const idleBots       = new Set();  // bots ready for a new conversation
+
 const abuseStrikes   = new Map();  // ip → { count, resetAt }
 const bannedIPs      = new Map();  // ip → bannedUntil timestamp
 
@@ -185,6 +192,20 @@ function banIP(ip) {
   abuseStrikes.delete(ip);
   writeAbuseLine('banned', ip);
   console.log(`[ban] banned=${bannedIPs.size}`);
+}
+
+// Bots authenticate with "Authorization: Bearer <BOT_TOKEN>" on the upgrade.
+// Browsers can't set that header, so a page can never pose as a bot.
+const BOT_TOKEN_HASH = process.env.BOT_TOKEN
+  ? crypto.createHash('sha256').update(process.env.BOT_TOKEN).digest()
+  : null;
+
+function isBotRequest(req) {
+  if (!BOT_TOKEN_HASH) return false;
+  const auth = req.headers['authorization'];
+  if (typeof auth !== 'string' || !auth.startsWith('Bearer ')) return false;
+  const given = crypto.createHash('sha256').update(auth.slice(7)).digest();
+  return crypto.timingSafeEqual(given, BOT_TOKEN_HASH);
 }
 
 function isBanned(ip) {
@@ -319,6 +340,7 @@ const wss = new WS.Server({
   server,
   maxPayload: 4096, // 4 KB hard ceiling at library level
   verifyClient: ({ origin, req }) => {
+    if (isBotRequest(req)) { req._isBot = true; return true; }
     if (isBanned(getIP(req))) return false;
     // Non-browser clients (curl, etc.) send no origin — allow them through
     // so health checks and CLI tools work. Browsers always send an origin.
@@ -331,28 +353,35 @@ const wss = new WS.Server({
 });
 
 wss.on('connection', (ws, req) => {
-  const ip  = getIP(req);
-  const now = Date.now();
+  const ip    = getIP(req);
+  const now   = Date.now();
+  const isBot = req._isBot === true;
 
-  // ── Rate: new connections per minute ─────────────────────────────────────
-  if (rateExceeded(wsConnectRate, ip, MAX_WS_CONNECTS_PER_MIN, 60_000)) {
-    logAbuse('ws_rate', ip);
-    ws.close(1008, 'Too many connections');
-    return;
+  if (!isBot) {
+    // ── Rate: new connections per minute ───────────────────────────────────
+    if (rateExceeded(wsConnectRate, ip, MAX_WS_CONNECTS_PER_MIN, 60_000)) {
+      logAbuse('ws_rate', ip);
+      ws.close(1008, 'Too many connections');
+      return;
+    }
+
+    // ── Cap: concurrent connections per IP ─────────────────────────────────
+    const currentConns = ipConnections.get(ip) || 0;
+    if (currentConns >= MAX_CONNS_PER_IP) {
+      logAbuse('conn_cap', ip);
+      ws.close(4429, 'Too many connections from your IP');
+      return;
+    }
+
+    ipConnections.set(ip, currentConns + 1);
+  } else {
+    botSockets.add(ws);
+    console.log(`[bot] connected bots=${botSockets.size}`);
   }
-
-  // ── Cap: concurrent connections per IP ───────────────────────────────────
-  const currentConns = ipConnections.get(ip) || 0;
-  if (currentConns >= MAX_CONNS_PER_IP) {
-    logAbuse('conn_cap', ip);
-    ws.close(4429, 'Too many connections from your IP');
-    return;
-  }
-
-  ipConnections.set(ip, currentConns + 1);
 
   ws.isAlive         = true;
-  ws._ip             = ip;
+  ws._isBot          = isBot;
+  ws._ip             = isBot ? null : ip; // bots don't hold a per-IP slot
   ws.keywords        = null;
   ws.roomId          = null;
   ws.msgTokens       = MSG_BURST;
@@ -371,7 +400,54 @@ wss.on('connection', (ws, req) => {
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
 
+    // Bots may only announce readiness, chat and leave; humans can't do bot things.
+    if (ws._isBot  && (msg.type === 'join' || msg.type === 'join_ai')) return;
+    if (!ws._isBot && msg.type === 'bot_ready') return;
+
     switch (msg.type) {
+
+      case 'bot_ready': {
+        // A bot offers itself for one new conversation, with a fresh key.
+        if (ws.roomId) return;
+        if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) {
+          send(ws, { type: 'error', code: 'invalid_key' });
+          return;
+        }
+        ws.pubKey = msg.pubKey;
+        idleBots.add(ws);
+        break;
+      }
+
+      case 'join_ai': {
+        // A waiting human explicitly chose to chat with an AI instead.
+        if (!ws._verified || ws.roomId) return;
+        if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) {
+          send(ws, { type: 'error', code: 'invalid_key' });
+          return;
+        }
+        let bot = null;
+        for (const b of idleBots) { if (b.readyState === WS.OPEN) { bot = b; break; } }
+        if (!bot || rooms.size >= MAX_ROOMS) {
+          send(ws, { type: 'error', code: 'ai_unavailable' });
+          return;
+        }
+
+        // The bot gets the human's keywords as a conversation topic
+        const topics = (ws.keywords || []).filter(k => k !== '__random__');
+        leaveSession(ws); // out of the keyword pools
+        ws.pubKey = msg.pubKey;
+
+        idleBots.delete(bot);
+        const roomId = randomId();
+        rooms.set(roomId, { a: bot, b: ws, ai: true });
+        bot.roomId = roomId;
+        ws.roomId  = roomId;
+
+        send(ws,  { type: 'matched', ai: true, matchedKeywords: [], partnerPubKey: bot.pubKey });
+        send(bot, { type: 'matched', ai: true, keywords: topics, partnerPubKey: ws.pubKey });
+        console.log(`[match] ai room=${roomId} rooms=${rooms.size}`);
+        break;
+      }
 
       case 'join': {
 
@@ -627,6 +703,12 @@ function handleClose(ws) {
   if (ws._closed) return;
   ws._closed = true;
 
+  if (ws._isBot) {
+    botSockets.delete(ws);
+    idleBots.delete(ws);
+    console.log(`[bot] disconnected bots=${botSockets.size}`);
+  }
+
   if (ws._ip) {
     const n = (ipConnections.get(ws._ip) || 1) - 1;
     if (n <= 0) ipConnections.delete(ws._ip);
@@ -637,6 +719,9 @@ function handleClose(ws) {
 }
 
 function leaveSession(ws) {
+  // A bot that leaves is no longer available until it sends bot_ready again
+  idleBots.delete(ws);
+
   // Remove from any waiting pool
   if (ws.keywords) {
     ws.keywords.forEach(kw => {
@@ -704,7 +789,8 @@ app.get('/challenge', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.get('/count', (req, res) => {
-  res.json({ count: wss.clients.size });
+  // Bots are not people — they never count towards the "embers" shown.
+  res.json({ count: wss.clients.size - botSockets.size, ai: idleBots.size > 0 });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -752,7 +838,7 @@ app.post('/report', (req, res) => {
 // Hardcoding avoids the bug where `new Date()` made the "effective date"
 // slide forward every time someone loaded the page.
 const POLICY_EFFECTIVE_DATE = '24 September 2026';
-const TERMS_EFFECTIVE_DATE  = '17 April 2026';
+const TERMS_EFFECTIVE_DATE  = '24 September 2026';
 
 const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <html lang="en">
@@ -782,9 +868,11 @@ const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <h2>IP addresses</h2>
 <p>We do not log IP addresses in association with chat content, reports, keywords, or any durable user record. An IP-based abuse defense runs at the connection layer: when a client trips a rate limit, fails a proof-of-work check, or hits a honeypot, an entry is written to an abuse log containing only a timestamp, the triggered rule, and the source IP. This log feeds a ban system that temporarily blocks repeat offenders and is rotated after 90 days. It is never cross-referenced against reports, conversations, or keywords — and cannot be, because none of those are stored. This is the minimum defense a fully anonymous service requires to remain functional.</p>
 <h2>End-to-end encryption</h2>
-<p>All messages are encrypted on your device using the NaCl box construction (Curve25519 + XSalsa20 + Poly1305). Only the two participants can decrypt messages. The server relays encrypted data it cannot read.</p>
+<p>All messages are encrypted on your device using the NaCl box construction (Curve25519 + XSalsa20 + Poly1305). Only the two participants can decrypt messages. The server relays encrypted data it cannot read. In an optional AI chat, the AI is the other participant (see below).</p>
+<h2>Optional AI chat</h2>
+<p>If no one matches your keywords right away, the waiting screen may offer to let you chat with an AI instead. This only happens if you click that button, and an AI chat is labeled as such for its entire duration. The AI is a language model running on hardware operated by Emberline. It is the other participant in the conversation, so to reply it decrypts your messages and receives the keywords you entered. AI conversations are held in memory only while the chat lasts; they are not stored, logged, or used to train models. The AI can be wrong or say strange things — do not rely on it for advice, and do not share personal information with it.</p>
 <h2>Keywords</h2>
-<p>Keywords are held temporarily in server memory during matching and discarded immediately after a match is made or the session ends.</p>
+<p>Keywords are held temporarily in server memory during matching and discarded immediately after a match is made or the session ends. If you choose an AI chat, your keywords are passed to the AI as conversation topics and discarded when the chat ends.</p>
 <h2>Cookies, tracking, and storage</h2>
 <p>We use no cookies, no analytics, no tracking pixels, and no third-party services. We do not use localStorage, sessionStorage, or any other form of persistent client-side storage. All fonts and cryptography libraries are self-hosted — no external requests are made by your browser.</p>
 <h2>Illegal content</h2>
@@ -837,18 +925,20 @@ const TERMS_HTML = allowStyleBlocks(`<!DOCTYPE html>
   <li>Threats of violence, harassment, stalking, or intimidation</li>
   <li>Content illegal under Swiss law or your country of residence</li>
   <li>Coordinated manipulation, deception, or fraud</li>
-  <li>Automated access (bots, scrapers, scripts)</li>
+  <li>Automated access (bots, scrapers, scripts), other than Emberline's own clearly labeled AI chat</li>
   <li>Attempts to circumvent security or encryption mechanisms</li>
 </ul>
 <h2>4. CSAM — zero tolerance</h2>
 <p>Any user who transmits, solicits, or facilitates CSAM will be reported to KOBIK immediately. Report directly at <a href="https://www.kobik.ch" target="_blank" rel="noopener noreferrer">www.kobik.ch</a>.</p>
-<h2>5. Anonymity and its limits</h2>
+<h2>5. Optional AI chat</h2>
+<p>Emberline may offer an optional chat with an AI model operated by Emberline when no human match is available. It only starts at your request and is labeled as AI for its entire duration. AI replies are generated automatically, can be inaccurate or inappropriate, and are not advice of any kind. These terms apply to AI chats as well. The AI ends a chat if a user indicates they are under 18.</p>
+<h2>6. Anonymity and its limits</h2>
 <p>Emberline is designed to be anonymous. We require no accounts, store no messages, and retain no user identifiers. An IP-based abuse defense log is maintained for bot prevention only — see the Privacy Policy for full details. Anonymity at the technical layer does not exempt users from legal responsibility under Swiss law.</p>
-<h2>6. No warranty</h2>
+<h2>7. No warranty</h2>
 <p>Emberline is provided as-is without warranty of any kind. Use is at your own risk.</p>
-<h2>7. Governing law</h2>
+<h2>8. Governing law</h2>
 <p>These terms are governed exclusively by Swiss law. Disputes are subject to the exclusive jurisdiction of Swiss courts.</p>
-<h2>8. Contact</h2>
+<h2>9. Contact</h2>
 <p>Legal notices and law enforcement requests: <a href="mailto:contactall@emberline.ch">contactall@emberline.ch</a>.</p>
 <hr>
 <p class="small"><a href="/privacy">Privacy policy</a> &nbsp;·&nbsp; <a href="/">Back to Emberline</a></p>

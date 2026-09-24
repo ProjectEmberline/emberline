@@ -16,6 +16,7 @@ const nacl = require('tweetnacl');
 
 const ROOT = path.join(__dirname, '..');
 const MAX_CONNS_PER_IP = 3; // small cap so the connection-limit test is fast
+const BOT_TOKEN = 'test-bot-token-' + crypto.randomBytes(8).toString('hex');
 
 let server, logDir, HTTP, WS_URL;
 
@@ -40,7 +41,7 @@ before(async () => {
   server = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
     env: { ...process.env, PORT: String(port), LOG_DIR: logDir, TRUST_PROXY: '1',
-           MAX_CONNS_PER_IP: String(MAX_CONNS_PER_IP), BAN_ALLOWLIST: '' },
+           MAX_CONNS_PER_IP: String(MAX_CONNS_PER_IP), BAN_ALLOWLIST: '', BOT_TOKEN },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -242,4 +243,62 @@ test('repeated abuse bans the IP for HTTP and WebSocket only', async () => {
   assert.equal(await status(bystander), 200);
   await assert.rejects(client(spam), 'WebSocket upgrade refused');
   assert.match(fs.readFileSync(path.join(logDir, 'abuse.log'), 'utf8'), new RegExp(`\\[banned\\] ip=${spam.replace(/\./g, '\\.')}`));
+});
+
+// ── Optional AI chat ───────────────────────────────────────────────────────
+
+function bot(token = BOT_TOKEN) {
+  return client(freshIp(), { headers: { Authorization: `Bearer ${token}` } });
+}
+const countInfo = async () => (await fetch(HTTP + '/count')).json();
+
+test('AI chat: opt-in only, always labeled, bots never counted as people', async () => {
+  const before = await countInfo();
+  const b = await bot();
+  tx(b, { type: 'bot_ready', pubKey: pubKey() }); await sleep(100);
+  const withBot = await countInfo();
+  assert.equal(withBot.ai, true, 'AI offered once a bot is ready');
+  assert.equal(withBot.count, before.count, 'bot not counted as an ember');
+
+  // A human who only searches by keyword is never matched with the bot
+  const h = await client(freshIp());
+  await join(h, ['aitopic', 'music']);
+  assert.equal(got(h, 'matched').length, 0);
+  assert.equal(got(h, 'waiting').length, 1);
+
+  // Opting in matches with the bot; both sides are told it is an AI chat
+  tx(h, { type: 'join_ai', pubKey: pubKey() }); await sleep(150);
+  const hm = got(h, 'matched')[0], bm = got(b, 'matched')[0];
+  assert.equal(hm?.ai, true, 'human sees ai: true');
+  assert.equal(bm?.ai, true);
+  assert.deepEqual(bm.keywords, ['aitopic', 'music'], 'bot gets the keywords as topics');
+  assert.equal((await countInfo()).ai, false, 'busy bot is not offered');
+
+  // Relay works both ways; leaving frees the bot only after it re-offers
+  tx(b, frame('hello from the AI')); tx(h, frame('hi')); await sleep(150);
+  assert.equal(got(h, 'message').length, 1);
+  assert.equal(got(b, 'message').length, 1);
+  tx(h, { type: 'leave' }); await sleep(100);
+  assert.equal(got(b, 'partner_left').length, 1);
+  assert.equal((await countInfo()).ai, false);
+  tx(b, { type: 'bot_ready', pubKey: pubKey() }); await sleep(100);
+  assert.equal((await countInfo()).ai, true);
+  b.close(); h.close(); await sleep(100);
+  assert.equal((await countInfo()).ai, false, 'disconnected bot is not offered');
+});
+
+test('AI chat: wrong token is an ordinary client; join_ai needs a bot and a verified socket', async () => {
+  const fake = await bot('wrong-token');
+  tx(fake, { type: 'bot_ready', pubKey: pubKey() }); await sleep(100);
+  assert.equal((await countInfo()).ai, false, 'unauthenticated bot_ready ignored');
+
+  const h = await client(freshIp());
+  tx(h, { type: 'join_ai', pubKey: pubKey() }); await sleep(100);
+  assert.equal(got(h, 'matched').length + got(h, 'error').length, 0, 'unverified join_ai ignored');
+
+  await join(h, ['nobots']);
+  tx(h, { type: 'join_ai', pubKey: pubKey() }); await sleep(100);
+  assert.ok(got(h, 'error').some(e => e.code === 'ai_unavailable'));
+  assert.equal(got(h, 'matched').length, 0);
+  fake.close(); h.close();
 });

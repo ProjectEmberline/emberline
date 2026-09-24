@@ -54,7 +54,7 @@ node server.js
 
 The server listens on port 3000. Put HTTPS in front of it, update `ALLOWED_WS_ORIGINS` in `server.js` to your domain, and you are running.
 
-`npm test` starts a throwaway server and runs the end-to-end tests in `test/` (static-file exposure, CSP, client-IP handling, message relay, rate limits, bans). CI runs them on every push.
+`npm test` starts a throwaway server and runs the end-to-end tests in `test/` (static-file exposure, CSP, client-IP handling, message relay, rate limits, bans, AI chat). CI runs them on every push.
 
 Only the `public/` directory is served over HTTP. Configuration is via environment variables:
 
@@ -63,8 +63,23 @@ Only the `public/` directory is served over HTTP. Configuration is via environme
 | `PORT`        | `3000`         | Listen port |
 | `LOG_DIR`     | project root   | Where `abuse.log` and `reports.log` are written. Must not be inside `public/`. |
 | `BAN_ALLOWLIST` | (empty)    | Comma-separated IPs that are never auto-banned (e.g. your own). |
+| `BOT_TOKEN` | (unset)          | Shared secret for the optional AI chat bot. Unset disables AI chat. See below. |
 | `MAX_CONNS_PER_IP` | `20`    | Concurrent WebSocket connections per IP. Raise it if many users share one address (carrier-grade NAT, campus networks). |
 | `TRUST_PROXY` | `1`            | Number of reverse proxies in front of the server. The client IP is taken from `X-Forwarded-For` that many hops back from the socket; anything further left is client-supplied and ignored. Set to `0` if clients connect directly. Getting this wrong either lets clients spoof their IP (too high) or makes every client look like your proxy (too low). |
+
+### Optional AI chat
+
+If no one matches a visitor's keywords, the waiting screen can offer "Chat with an AI instead". It is opt-in only, labeled as AI for the whole chat, and only offered while a bot is connected and its model is up. The bot is `bots/ember-bot.js`; it talks to any OpenAI-compatible local model server such as llama.cpp's `llama-server`.
+
+1. Pick a long random secret and set it as `BOT_TOKEN` for the server.
+2. On the machine that runs the model, put the same secret in `bots/.bot-token` (git-ignored).
+3. Start your model server (the bot expects `http://127.0.0.1:9093`; override with `LLM_URL`), then:
+
+```bash
+node bots/ember-bot.js
+```
+
+Conversation style lives in `bots/rules.txt`, re-read at the start of every conversation. Safety rules that always apply — AI honesty, adults only, no sexual content, no personal data, crisis resources — are in `CORE_RULES` in the script and are appended after your rules. The bot also ends a chat when someone says they are under 18, caps conversation length, and never logs message content. Use an instruction-tuned model with safety training.
 
 Production considerations — TLS termination, WireGuard, automatic bans, log rotation, security headers — are documented in [ARCHITECTURE.md §11](./ARCHITECTURE.md). Deployment artifacts for the canonical instance (Dockerfile, compose configuration) are not published in this repository; a plain Node setup on any Linux host is sufficient to run the project.
 
@@ -104,6 +119,8 @@ Emberline is built around a specific threat model — casual privacy from third 
 ├── server.js              Node.js WebSocket + HTTP server
 ├── setup-assets.js        One-time font + crypto library downloader
 ├── package.json
+├── bots/                  Optional AI chat bot (ember-bot.js) and its rules.txt
+├── test/                  End-to-end and bot tests (npm test)
 ├── public/                The only directory served over HTTP
 │   ├── index.html         Single-page frontend
 │   ├── app.js             Client-side logic, no framework
