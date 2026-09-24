@@ -5,10 +5,10 @@
  * Run:      node server.js
  *
  * Privacy & legal:
- *   - No IP addresses are logged or stored in permanent files
+ *   - IP addresses are written only to abuse.log (timestamp + rule + IP), never
+ *     alongside chats, keywords or reports
  *   - No message content is ever stored (E2EE relay only)
- *   - Reports are written to reports.log (reason + timestamp only)
- *   - Abuse events written to abuse.log (reason + timestamp only, for Fail2Ban)
+ *   - Reports are written to reports.log (reason + timestamp + optional details)
  *   - Privacy policy served at /privacy
  *
  * Environment:
@@ -86,6 +86,9 @@ const HEARTBEAT_INTERVAL_MS   = 60_000;  // 60s — halves ping overhead vs 30s 
 // single honeypot hit, bans the IP in memory: HTTP gets 403, WebSocket
 // upgrades are refused. This works regardless of network topology — unlike a
 // firewall on the app host, which only sees the tunnel/proxy address.
+// Hitting a rate limit is something a busy shared IP (school, office, VPN
+// exit) does in normal use, so it counts as at most one strike per IP per
+// minute and can never reach STRIKE_LIMIT on its own.
 const STRIKE_LIMIT            = 20;              // abuse events per window…
 const STRIKE_WINDOW_MS        = 10 * 60 * 1000;  // …within 10 minutes
 const BAN_DURATION_MS         = 24 * 60 * 60 * 1000;
@@ -103,6 +106,19 @@ const MAX_ROOMS               = 20_000;
 // message per MSG_REFILL_MS.
 const MSG_BURST               = 5;
 const MSG_REFILL_MS           = 300;
+
+// Every frame a person's socket sends, of any type. A real client stays far
+// below this (paced messages + a typing ping every 2s); going over it closes
+// the socket and counts as a strike.
+const FRAME_BURST             = 30;
+const FRAME_REFILL_MS         = 100;
+// Joins (incl. join_ai). Each one can match with someone, so this caps how fast
+// a client can cycle through the people waiting. A proof-of-work is only needed
+// once per socket, so it can't do that job. Over the limit the client is asked
+// to retry later (no strike).
+const JOIN_BURST              = 5;
+const JOIN_REFILL_MS          = 3_000;
+const MAX_JOINS_PER_IP_PER_MIN = 120;  // across all sockets of one IP
 // Must match maxlength on #chat-input. A JS string of N UTF-16 units encodes
 // to at most 3N UTF-8 bytes; NaCl box adds a 16-byte tag; base64 is 4/3.
 const MAX_MESSAGE_CHARS       = 300;
@@ -140,6 +156,8 @@ const httpApiRate    = new Map();  // ip → { count, resetAt }
 const httpStaticRate = new Map();  // ip → { count, resetAt }
 const reportThrottle = new Map();  // ip → { count, resetAt }
 const challengeRate  = new Map();  // ip → { count, resetAt }
+const joinRate       = new Map();  // ip → { count, resetAt }
+const lastRateStrike = new Map();  // ip → timestamp of the last rate-limit strike
 // Operator-run AI chat bots (see bots/). Humans are only ever matched with a
 // bot after explicitly opting in, and the match is always labeled as AI.
 const botSockets     = new Set();  // every authenticated bot connection
@@ -170,7 +188,7 @@ function randomId() {
   return crypto.randomBytes(8).toString('hex'); // 64-bit cryptographically random room ID
 }
 
-// Abuse log — for Fail2Ban pattern matching only. No content, no identity.
+// Abuse log — timestamp, rule and client IP only. No content, keywords or reports.
 const ABUSE_LOG   = path.join(LOG_DIR, 'abuse.log');
 const REPORTS_LOG = path.join(LOG_DIR, 'reports.log');
 function writeAbuseLine(reason, ip) {
@@ -184,6 +202,15 @@ function writeAbuseLine(reason, ip) {
 function logAbuse(reason, ip) {
   writeAbuseLine(reason, ip);
   if (rateExceeded(abuseStrikes, ip, STRIKE_LIMIT, STRIKE_WINDOW_MS)) banIP(ip);
+}
+
+// A rate limit was hit: logged and counted at most once per IP per minute
+// (see STRIKE_LIMIT), so shared IPs aren't banned for being busy.
+function logRateHit(reason, ip) {
+  const now = Date.now();
+  if (now - (lastRateStrike.get(ip) || 0) < 60_000) return;
+  lastRateStrike.set(ip, now);
+  logAbuse(reason, ip);
 }
 
 function banIP(ip) {
@@ -215,7 +242,7 @@ function isBanned(ip) {
   return true;
 }
 
-// Sliding-window rate limiter. Returns true if the IP is over the limit.
+// Fixed-window rate limiter. Returns true if the IP is over the limit.
 function rateExceeded(map, ip, maxPerWindow, windowMs) {
   const now = Date.now();
   const rec = map.get(ip) || { count: 0, resetAt: now + windowMs };
@@ -223,6 +250,27 @@ function rateExceeded(map, ip, maxPerWindow, windowMs) {
   rec.count++;
   map.set(ip, rec);
   return rec.count > maxPerWindow;
+}
+
+// Token bucket stored on the socket: up to `burst` tokens, one more every
+// `refillMs`. Takes a token and returns 0, or returns the ms until one is free.
+function takeToken(ws, key, burst, refillMs) {
+  const now = Date.now();
+  const b = ws[key] ??= { tokens: burst, at: now };
+  b.tokens = Math.min(burst, b.tokens + (now - b.at) / refillMs);
+  b.at = now;
+  if (b.tokens >= 1) { b.tokens -= 1; return 0; }
+  return Math.ceil((1 - b.tokens) * refillMs);
+}
+
+// How long a person must wait before their next join (0 = go ahead).
+function joinWait(ws) {
+  const wait = takeToken(ws, '_joinBucket', JOIN_BURST, JOIN_REFILL_MS);
+  if (wait) return wait;
+  if (rateExceeded(joinRate, ws._ip, MAX_JOINS_PER_IP_PER_MIN, 60_000)) {
+    return Math.max(1000, joinRate.get(ws._ip).resetAt - Date.now());
+  }
+  return 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,6 +286,8 @@ setInterval(() => {
   for (const [k, v] of httpStaticRate) { if (now > v.resetAt)   httpStaticRate.delete(k); }
   for (const [k, v] of reportThrottle) { if (now > v.resetAt)   reportThrottle.delete(k); }
   for (const [k, v] of challengeRate)  { if (now > v.resetAt)   challengeRate.delete(k); }
+  for (const [k, v] of joinRate)       { if (now > v.resetAt)   joinRate.delete(k); }
+  for (const [k, v] of lastRateStrike) { if (now - v > 60_000)  lastRateStrike.delete(k); }
 }, 60 * 60 * 1000); // hourly
 
 // Challenge tokens expire after 60s but the hourly sweep let stale entries
@@ -313,19 +363,20 @@ app.use((req, res, next) => {
 });
 
 // Static assets get a generous separate budget so font/JS loads don't eat
-// into the API budget used for /challenge and /count.
+// into the API budget used for /challenge. So does /count: every waiting
+// client polls it, so on a shared IP it adds up with ordinary use.
 const STATIC_EXT = new Set(['.js', '.css', '.woff2', '.woff', '.ttf', '.ico', '.png', '.svg', '.json']);
 
 app.use((req, res, next) => {
   const ip       = getIP(req);
-  const isStatic = STATIC_EXT.has(path.extname(req.path).toLowerCase());
+  const isStatic = STATIC_EXT.has(path.extname(req.path).toLowerCase()) || req.path === '/count';
   if (isStatic) {
     if (rateExceeded(httpStaticRate, ip, MAX_HTTP_STATIC_RPM, 60_000)) {
       return res.status(429).json({ error: 'too many requests' });
     }
   } else {
     if (rateExceeded(httpApiRate, ip, MAX_HTTP_API_RPM, 60_000)) {
-      logAbuse('http_flood', ip);
+      logRateHit('http_flood', ip);
       return res.status(429).json({ error: 'too many requests' });
     }
   }
@@ -357,10 +408,14 @@ wss.on('connection', (ws, req) => {
   const now   = Date.now();
   const isBot = req._isBot === true;
 
+  // Before any early return: a socket that errors with no 'error' listener
+  // (e.g. an oversized frame on a refused connection) crashes the process.
+  ws.on('error', () => handleClose(ws));
+
   if (!isBot) {
     // ── Rate: new connections per minute ───────────────────────────────────
     if (rateExceeded(wsConnectRate, ip, MAX_WS_CONNECTS_PER_MIN, 60_000)) {
-      logAbuse('ws_rate', ip);
+      logRateHit('ws_rate', ip);
       ws.close(1008, 'Too many connections');
       return;
     }
@@ -368,7 +423,7 @@ wss.on('connection', (ws, req) => {
     // ── Cap: concurrent connections per IP ─────────────────────────────────
     const currentConns = ipConnections.get(ip) || 0;
     if (currentConns >= MAX_CONNS_PER_IP) {
-      logAbuse('conn_cap', ip);
+      logRateHit('conn_cap', ip);
       ws.close(4429, 'Too many connections from your IP');
       return;
     }
@@ -384,8 +439,6 @@ wss.on('connection', (ws, req) => {
   ws._ip             = isBot ? null : ip; // bots don't hold a per-IP slot
   ws.keywords        = null;
   ws.roomId          = null;
-  ws.msgTokens       = MSG_BURST;
-  ws.msgTokensAt     = now;
   ws._closed         = false;
   ws._connectedAt    = now;
   ws._verified       = false;
@@ -395,6 +448,12 @@ wss.on('connection', (ws, req) => {
   ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', raw => {
+    if (ws.readyState !== WS.OPEN) return; // closing — ignore what's still in flight
+    if (!ws._isBot && takeToken(ws, '_frameBucket', FRAME_BURST, FRAME_REFILL_MS)) {
+      logAbuse('ws_flood', ws._ip);
+      ws.close(1008, 'Too many messages');
+      return;
+    }
     if (raw.length > 4096) return; // belt-and-suspenders after maxPayload
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
@@ -423,6 +482,11 @@ wss.on('connection', (ws, req) => {
         if (!ws._verified || ws.roomId) return;
         if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) {
           send(ws, { type: 'error', code: 'invalid_key' });
+          return;
+        }
+        const aiWait = joinWait(ws);
+        if (aiWait) {
+          send(ws, { type: 'error', code: 'slow_down', retryMs: aiWait });
           return;
         }
         let bot = null;
@@ -511,6 +575,13 @@ wss.on('connection', (ws, req) => {
         // ── Memory ceiling ───────────────────────────────────────────────
         if (waitingPool.size >= MAX_WAITING_POOL_KEYS || rooms.size >= MAX_ROOMS) {
           send(ws, { type: 'error', code: 'server_busy' });
+          return;
+        }
+
+        // ── Pacing: after PoW, so a retry needs no fresh token ───────────
+        const wait = joinWait(ws);
+        if (wait) {
+          send(ws, { type: 'error', code: 'slow_down', retryMs: wait });
           return;
         }
 
@@ -635,7 +706,6 @@ wss.on('connection', (ws, req) => {
             waitingPool.set(kw, pool);
           });
           send(ws, { type: 'waiting', keywords });
-          console.log(`[wait] pool_keys=${waitingPool.size}`);
         }
         break;
       }
@@ -657,14 +727,10 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
-        const now = Date.now();
-        ws.msgTokens   = Math.min(MSG_BURST, ws.msgTokens + (now - ws.msgTokensAt) / MSG_REFILL_MS);
-        ws.msgTokensAt = now;
-        if (ws.msgTokens < 1) {
+        if (takeToken(ws, '_msgBucket', MSG_BURST, MSG_REFILL_MS)) {
           send(ws, { type: 'error', code: 'rate_limited' });
           return;
         }
-        ws.msgTokens -= 1;
 
         send(other, { type: 'message', ciphertext, nonce });
         break;
@@ -689,7 +755,6 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => handleClose(ws));
-  ws.on('error', () => handleClose(ws));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -716,6 +781,9 @@ function handleClose(ws) {
   }
 
   leaveSession(ws);
+  // Otherwise every closed socket keeps its past partners alive, and they
+  // keep theirs: memory would grow with every conversation since startup.
+  ws._recentPartners?.clear();
 }
 
 function leaveSession(ws) {

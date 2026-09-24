@@ -38,7 +38,7 @@ For the full architecture, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ### Requirements
 
-- Node.js 18 or later
+- Node.js 22 or later (production runs Node 24)
 - An HTTPS-terminating reverse proxy (Caddy, nginx, or similar)
 - A domain
 

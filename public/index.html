@@ -232,6 +232,14 @@
     font-style: italic;
   }
 
+  .age-note {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 12px;
+  }
+  .age-note a { color: var(--muted); text-underline-offset: 3px; }
+
   .btn {
     width: 100%;
     padding: 14px;
@@ -645,7 +653,7 @@
     <!-- ENTRY -->
     <div id="section-entry">
       <h1>Find someone who <em>gets it.</em></h1>
-      <p class="sub">Add up to 10 words that resonate with you. We'll match you with a stranger who shares at least one. No accounts, no ads, no tracking, no message storage, no IP logs — just a fleeting moment, end-to-end encrypted.</p>
+      <p class="sub">Add up to 10 words that resonate with you. We'll match you with a stranger who shares at least one. No accounts, no ads, no tracking, no message storage — just a fleeting moment, end-to-end encrypted.</p>
       <div class="tag-field" id="tag-field">
         <div id="tag-list"></div>
         <input type="text" id="keyword-input" placeholder="type a word, press Enter…" maxlength="20" autocomplete="off" />
@@ -654,6 +662,7 @@
       <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
 
       <button class="btn" id="btn-enter" disabled>Find my match →</button>
+      <p class="age-note">18+ only. By continuing you confirm you are an adult and agree to the <a href="/terms">Terms</a>.</p>
     </div>
 
     <!-- WAITING -->

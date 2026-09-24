@@ -106,6 +106,8 @@ Crawlers, link-preview unfurls, and quick-bounce visitors never consume a `/chal
 - `join` is sent immediately on the same verified connection
 - No new PoW solve needed — `ws._verified` persists for the connection lifetime
 - This is why Next → is instant: zero reconnect overhead, zero re-verification
+- Because one PoW covers every later join, joins are paced per socket and per IP (§5.1). Over the limit the server replies `slow_down` with `retryMs` and the client resends the same join after that delay
+- If the connection dropped during the chat ("Connection lost"), Next → starts over with a new connection and PoW. A drop while waiting reconnects automatically, once per 30s
 
 ### The lesson
 
@@ -122,18 +124,21 @@ When Next → broke, successive fixes (Worker threads, pre-warming, parallel sol
 | Proof-of-Work | SHA-256 hash prefix, 4 leading zeros | `POW_DIFFICULTY = 4` |
 | Timing | Reject `join` < 200ms after connect | `MIN_JOIN_DELAY_MS = 200` |
 | Honeypot keyword | `__honeypot__` → ban IP for 24h | `HONEYPOT_KEYWORD` |
-| Auto-ban | 20 abuse events in 10 min → ban IP for 24h (in memory) | `STRIKE_LIMIT`, `BAN_DURATION_MS` |
+| Auto-ban | 20 strikes in 10 min → ban IP for 24h (in memory); rate-limit hits count at most once per IP per minute (§5.7) | `STRIKE_LIMIT`, `BAN_DURATION_MS` |
 | WS connection rate | Max 20 new connections/min/IP | `MAX_WS_CONNECTS_PER_MIN` |
 | Concurrent WS cap | Max 20 open sockets/IP | `MAX_CONNS_PER_IP` |
-| HTTP API rate | Max 60 req/min/IP (API routes only) | `MAX_HTTP_API_RPM` |
-| HTTP static rate | Max 300 req/min/IP (assets only) | `MAX_HTTP_STATIC_RPM` |
+| WS frame rate | Any frame type: burst 30, then 10/s per socket → close + strike | `FRAME_BURST`, `FRAME_REFILL_MS` |
+| Join pacing | `join`/`join_ai`: burst 5, then 1 per 3s per socket; 120/min/IP → `slow_down` | `JOIN_BURST`, `JOIN_REFILL_MS`, `MAX_JOINS_PER_IP_PER_MIN` |
+| Chat messages | Burst 5, then 1 per 300ms per socket → `rate_limited` | `MSG_BURST`, `MSG_REFILL_MS` |
+| HTTP API rate | Max 60 req/min/IP (API routes except `/count`) | `MAX_HTTP_API_RPM` |
+| HTTP static rate | Max 300 req/min/IP (assets and `/count`) | `MAX_HTTP_STATIC_RPM` |
 | Challenge rate | Max 60 tokens/hour/IP | `MAX_CHALLENGES_PER_IP` |
 | Report rate | Max 10 reports/hour/IP | `MAX_REPORTS_PER_IP` |
 | Memory ceilings | Hard caps on all Maps | `MAX_WAITING_POOL_KEYS` etc. |
 
-**Connection cap and VPN users:** `MAX_CONNS_PER_IP` was raised from 5 to 20 to accommodate VPN users who share exit IPs. When the cap is hit, the server closes the connection with custom WebSocket code `4429`. The client detects this and shows an alert explaining the issue with a privacy reassurance: "Emberline is end-to-end encrypted and does not log IP addresses — your privacy is protected without a VPN."
+**Connection cap and VPN users:** `MAX_CONNS_PER_IP` was raised from 5 to 20 to accommodate VPN users who share exit IPs. When the cap is hit, the server closes the connection with custom WebSocket code `4429`. The client detects this and shows an alert suggesting to wait a minute or switch VPN servers. It must not claim that IPs are never logged: `abuse.log` records them (§6).
 
-**Rate limiting uses two separate budgets** — static assets (fonts, JS) and API routes — so a page load never consumes the user's matching budget.
+**Rate limiting uses two separate budgets** — static assets (fonts, JS) plus `/count`, and API routes — so neither a page load nor the waiting screen's `/count` polling consumes the user's matching budget.
 
 **PoW difficulty:** each +1 roughly doubles client solve time. At difficulty 4, expect 50–200ms. At 5, ~300ms. Do not exceed 6 without measuring UX impact. PoW is the primary bot defence; timing check is supplementary.
 
@@ -202,9 +207,9 @@ Room IDs are generated with `crypto.randomBytes(8).toString('hex')` — 64-bit c
 2026-03-28T12:00:00Z [pow_fail] ip=1.2.3.4
 ```
 
-Rejection labels: `pow_fail` `pow_ip_mismatch` `honeypot` `conn_cap` `ws_rate` `ws_origin` `http_flood`, plus `banned` when an IP gets banned.
+Rejection labels: `pow_fail` `pow_ip_mismatch` `honeypot` `ws_origin` `ws_flood` `conn_cap` `ws_rate` `http_flood`, plus `banned` when an IP gets banned.
 
-Every rejection is also a **strike** against the client IP. 20 strikes within 10 minutes (or one honeypot hit) bans the IP for 24 hours: all HTTP requests get `403` and WebSocket upgrades are refused, without writing further log lines. Bans live in memory and are cleared on restart. `BAN_ALLOWLIST` (comma-separated IPs) exempts addresses such as the operator's own.
+Every rejection is also a **strike** against the client IP. The last three are rate-limit hits, which a busy shared IP (school, office, VPN exit) produces in normal use: they are logged and counted at most once per IP per minute, so they can't reach the limit on their own. 20 strikes within 10 minutes (or one honeypot hit) bans the IP for 24 hours: all HTTP requests get `403` and WebSocket upgrades are refused, without writing further log lines. Bans live in memory and are cleared on restart. `BAN_ALLOWLIST` (comma-separated IPs) exempts addresses such as the operator's own.
 
 Bans are enforced in the app rather than a host firewall on purpose. Behind a reverse proxy or tunnel, the app host only ever sees the proxy's address, so a firewall there cannot match client IPs; the app sees the real IP via `X-Forwarded-For` (see `TRUST_PROXY`). A firewall-level ban (Fail2Ban) is only effective on the machine that receives the client's TCP connection — in the canonical deployment, the VPS. A Fail2Ban setup for that case:
 
@@ -301,6 +306,8 @@ All frames are JSON, max 4096 bytes.
 { "type": "error",        "code": "challenge_expired" }
 { "type": "error",        "code": "server_busy" }
 { "type": "error",        "code": "ai_unavailable" }
+{ "type": "error",        "code": "slow_down", "retryMs": 2400 }   // join paced; resend it after retryMs
+{ "type": "error",        "code": "rate_limited" }                 // chat message over the limit, not relayed
 
 // AI chat: the human side always gets ai: true; the bot also gets the keywords
 { "type": "matched",      "ai": true, "matchedKeywords": [], "partnerPubKey": "<base64>" }
@@ -328,13 +335,13 @@ Design constraints, in order: **the user must always know**, then **nobody gets 
 | Method | Path | Purpose | Rate limit |
 |---|---|---|---|
 | `GET` | `/challenge` | Issue PoW token | 60/hour/IP |
-| `GET` | `/count` | Live user count | API budget |
+| `GET` | `/count` | Live user count | Static budget |
 | `POST` | `/report` | Submit abuse report | 10/hour/IP |
 | `GET` | `/privacy` | Privacy policy page | API budget |
 | `GET` | `/terms` | Terms of service page | API budget |
 | `GET` | `/*` | Static files (incl. `.json`) | Static budget |
 
-`/count` returns `{ count, ai }`: the real number of connected people (bots excluded), no inflation or social-proof adjustment, and whether an AI chat can be offered right now. The client polls this endpoint only while the user is on the entry screen (not while waiting or chatting).
+`/count` returns `{ count, ai }`: the real number of connected people (bots excluded), no inflation or social-proof adjustment, and whether an AI chat can be offered right now. The client polls it every 60s on the entry screen and every 10s while waiting (to decide whether to offer an AI chat), never while chatting.
 
 ---
 

@@ -91,6 +91,19 @@ function client(ip, opts = {}) {
 const tx  = (ws, obj) => ws.send(JSON.stringify(obj));
 const got = (ws, type) => ws.inbox.filter(m => m.type === type);
 
+// abuse.log lines for one IP (endsWith, so 198.51.100.1 doesn't match .12)
+const abuseLines = ip => fs.readFileSync(path.join(logDir, 'abuse.log'), 'utf8')
+  .split('\n').filter(l => l.endsWith(` ip=${ip}`));
+
+// Opens a socket and resolves once the server has closed or refused it
+function refused(ip, opts = {}, onOpen) {
+  return new Promise(r => {
+    const w = new WS(WS_URL, { headers: { 'X-Forwarded-For': ip }, ...opts });
+    if (onOpen) w.on('open', () => onOpen(w));
+    w.on('error', () => {}); w.on('close', r);
+  });
+}
+
 async function join(ws, keywords, { verified = false } = {}) {
   tx(ws, { type: 'join', keywords, pubKey: pubKey(), ...(verified ? {} : await pow(ws.ip)) });
   await sleep(150);
@@ -228,6 +241,57 @@ test("'leave' does not free a connection slot; closing does", async () => {
   await sleep(150);
   assert.equal(again.readyState, WS.OPEN, 'slot freed after real close');
   again.close();
+});
+
+test('an oversized frame on a refused connection does not crash the server', async () => {
+  const ip = freshIp();
+  const held = [];
+  for (let i = 0; i < MAX_CONNS_PER_IP; i++) held.push(await client(ip));
+  await refused(ip, {}, w => w.send('x'.repeat(10_000))); // over the cap, then > maxPayload
+  await sleep(100);
+  assert.equal((await fetch(HTTP + '/count')).status, 200, 'server still running');
+  held.forEach(s => s.close());
+});
+
+test('a frame flood closes the socket and counts as one strike', async () => {
+  const ws = await client(freshIp());
+  for (let i = 0; i < 100; i++) tx(ws, { type: 'typing' });
+  await sleep(150);
+  assert.equal(ws.closeCode, 1008);
+  assert.equal(abuseLines(ws.ip).filter(l => l.includes('[ws_flood]')).length, 1);
+});
+
+test('joins are paced per socket; the retry after retryMs goes through', async () => {
+  const ws = await client(freshIp());
+  await join(ws, ['pace1']);
+  for (let i = 2; i <= 5; i++) await join(ws, ['pace' + i], { verified: true });
+  ws.inbox = [];
+  await join(ws, ['pace6'], { verified: true });
+  const slow = got(ws, 'error').find(e => e.code === 'slow_down');
+  assert.ok(slow?.retryMs > 0 && slow.retryMs <= 3000, 'sixth join in a row is paced');
+  assert.equal(got(ws, 'waiting').length, 0);
+  await sleep(slow.retryMs);
+  await join(ws, ['pace6'], { verified: true });
+  assert.equal(got(ws, 'waiting').length, 1);
+  ws.close();
+});
+
+test('rate-limit hits alone never ban a busy shared IP', async () => {
+  const ip = freshIp();
+  const opt = { headers: { 'X-Forwarded-For': ip } };
+  const held = [];
+  for (let i = 0; i < MAX_CONNS_PER_IP; i++) held.push(await client(ip));
+  for (let i = 0; i < 25; i++) await refused(ip);                  // conn cap, then connect rate
+  for (let i = 0; i < 70; i++) await fetch(HTTP + '/terms', opt);  // API budget
+  assert.equal((await fetch(HTTP + '/count', opt)).status, 200, 'not banned');
+  assert.equal(abuseLines(ip).length, 1, 'one strike per minute');
+  held.forEach(s => s.close());
+});
+
+test('/count polling does not use the API budget', async () => {
+  const opt = { headers: { 'X-Forwarded-For': freshIp() } };
+  for (let i = 0; i < 70; i++) assert.equal((await fetch(HTTP + '/count', opt)).status, 200);
+  assert.equal((await fetch(HTTP + '/challenge', opt)).status, 200);
 });
 
 test('repeated abuse bans the IP for HTTP and WebSocket only', async () => {

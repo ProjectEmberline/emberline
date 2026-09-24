@@ -31,6 +31,7 @@ async function solveChallenge(prefix, difficulty) {
 
 async function fetchAndSolveChallenge() {
   const res  = await fetch('/challenge');
+  if (!res.ok) throw new Error(res.status === 429 ? 'busy' : 'unreachable');
   const data = await res.json();
   const nonce = await solveChallenge(data.prefix, data.difficulty);
   return { token: data.token, nonce };
@@ -147,22 +148,61 @@ function connect() {
       if (event.code === 4429) {
         show('entry');
         document.getElementById('btn-enter').disabled = tags.length === 0;
-        alert('Too many connections from your IP address. If you\'re using a VPN, try switching servers or disconnecting it.\n\nEmberline is end-to-end encrypted and does not log IP addresses — your privacy is protected without a VPN.');
+        alert('Too many connections from your IP address right now. If you\'re on a VPN or a shared network, wait a minute or switch VPN servers, then try again.');
         sock._intentionalClose = true;
         ws = null;
         return;
       }
-      // Only show "connection lost" for unexpected drops during an active conversation.
-      // Intentional closes (Leave, Next →) set ws._intentionalClose = true first.
-      if (!sock._intentionalClose && document.body.classList.contains('is-matched')) {
-        appendSystemMsg('Connection lost.');
-      }
+      // Intentional closes (Leave, Cancel) set _intentionalClose first.
+      if (!sock._intentionalClose) connectionLost();
     };
   });
 }
 
 function wsSend(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+// Joins go through here so a 'slow_down' reply can resend the latest one.
+let _lastJoinFrame = null;
+function sendJoin(frame) {
+  _lastJoinFrame = frame;
+  wsSend(frame);
+}
+
+// The socket dropped without the user leaving: a server restart, a network
+// change, or a phone suspending the tab. Nothing sent on it arrives any more.
+let _lastAutoReconnect = 0;
+function connectionLost() {
+  ws = null;
+  sharedSecret = null;
+  _cachedPow = null; // challenges live in server memory; a restart forgets them
+  clearTimeout(window._matchFallbackTimer);
+  stopAiOffer();
+  clearOutbox();
+
+  if (document.body.classList.contains('is-matched')) {
+    hideTypingIndicator();
+    appendSystemMsg('Connection lost. Press next to find someone new.');
+    document.getElementById('chat-input').disabled = true;
+    document.getElementById('btn-send').disabled = true;
+    return;
+  }
+  if (!stillWaiting(null)) return;
+
+  // Still searching: reconnect once on the user's behalf. A second drop soon
+  // after means something is wrong, so hand control back instead of looping.
+  if (Date.now() - _lastAutoReconnect < 30_000) {
+    show('entry');
+    document.getElementById('btn-enter').disabled = tags.length === 0;
+    alert('Lost the connection to Emberline. Please try again.');
+    return;
+  }
+  _lastAutoReconnect = Date.now();
+  const info = document.getElementById('waiting-info');
+  if (info) info.textContent = 'Connection lost — reconnecting…';
+  // Spread out reconnects so a server restart isn't hit by everyone at once
+  setTimeout(() => { if (stillWaiting(null)) enterKeyword(); }, 1000 + Math.random() * 2000);
 }
 
 // ── Incoming messages ─────────────────────────────────────────────────────────
@@ -180,6 +220,18 @@ function handleMessage(msg) {
         const info = document.getElementById('waiting-info');
         if (info) info.textContent = 'The AI is busy right now — still looking for a person…';
         startAiOffer();
+      } else if (msg.code === 'slow_down') {
+        // Too many searches in a short time — send the same one again shortly
+        const frame = _lastJoinFrame, socket = ws;
+        const info = document.getElementById('waiting-info');
+        const slowText = 'Easy there — searching again in a moment…';
+        const prevText = info && info.textContent !== slowText ? info.textContent : '';
+        if (info) info.textContent = slowText;
+        setTimeout(() => {
+          if (frame !== _lastJoinFrame || !stillWaiting(socket)) return;
+          if (info && info.textContent === slowText) info.textContent = prevText;
+          wsSend(frame);
+        }, (Number(msg.retryMs) || 3000) + 100);
       } else if (msg.code === 'rate_limited' || msg.code === 'message_rejected') {
         appendSystemMsg('A message could not be delivered.');
       }
@@ -317,14 +369,16 @@ async function enterKeyword() {
       getPow()
     ]);
   } catch(e) {
-    alert('Could not reach the server. Make sure server.js is running.');
+    if (ws) { ws._intentionalClose = true; ws.close(); ws = null; }
     show('entry');
     document.getElementById('btn-enter').disabled = false;
-    if (ws) { ws.close(); ws = null; }
+    alert(e?.message === 'busy'
+      ? 'Lots of searches from your network right now. Please wait a minute and try again.'
+      : 'Could not reach Emberline. Check your connection and try again.');
     return;
   }
 
-  wsSend({ type: 'join', keywords: tags, pubKey: pubKeyB64, token: pow.token, nonce: pow.nonce });
+  sendJoin({ type: 'join', keywords: tags, pubKey: pubKeyB64, token: pow.token, nonce: pow.nonce });
   startAiOffer();
 
   // Fallback: if no keyword match after 10s, also join the random pool.
@@ -339,7 +393,7 @@ async function enterKeyword() {
     try { pow2 = await getPow(); } catch(e) { return; }
     // A match may have arrived (or the user cancelled) while solving the PoW
     if (!stillWaiting(joinedSocket)) return;
-    wsSend({ type: 'join', keywords: [...tags, '__random__'], pubKey: pubKeyB64, token: pow2.token, nonce: pow2.nonce });
+    sendJoin({ type: 'join', keywords: [...tags, '__random__'], pubKey: pubKeyB64, token: pow2.token, nonce: pow2.nonce });
   }, 10000);
 }
 
@@ -524,6 +578,9 @@ async function nextConversation() {
 
   if (tags.length === 0) { show('entry'); return; }
 
+  // The connection dropped during the chat: start over with a new one
+  if (!ws || ws.readyState !== WebSocket.OPEN) return enterKeyword();
+
   const displayEl = document.getElementById('display-keyword');
   displayEl.innerHTML = '';
   tags.forEach(t => {
@@ -541,14 +598,14 @@ async function nextConversation() {
 
   // Reuse the already-verified connection — send join immediately
   const pubKeyB64 = nacl.util.encodeBase64(myKeyPair.publicKey);
-  wsSend({ type: 'join', keywords: tags, pubKey: pubKeyB64 });
+  sendJoin({ type: 'join', keywords: tags, pubKey: pubKeyB64 });
   startAiOffer();
 
   window._matchFallbackTimer = setTimeout(async () => {
     if (document.getElementById('section-waiting').style.display !== 'none') {
       const el = document.getElementById('waiting-info');
       if (el) el.textContent = 'No keyword match yet — trying random…';
-      wsSend({ type: 'join', keywords: [...tags, '__random__'], pubKey: pubKeyB64 });
+      sendJoin({ type: 'join', keywords: [...tags, '__random__'], pubKey: pubKeyB64 });
     }
   }, 10000);
 }
@@ -582,7 +639,7 @@ function stopAiOffer() {
 function chooseAi() {
   if (!ws || !myKeyPair) return;
   stopAiOffer();
-  wsSend({ type: 'join_ai', pubKey: nacl.util.encodeBase64(myKeyPair.publicKey) });
+  sendJoin({ type: 'join_ai', pubKey: nacl.util.encodeBase64(myKeyPair.publicKey) });
 }
 
 // ── Keyboard listeners ────────────────────────────────────────────────────────

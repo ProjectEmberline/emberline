@@ -75,10 +75,10 @@ Emberline is designed to defend against a specific set of threats. Stating them 
 ### What we defend against
 
 - **Passive network observation** between a client and the TLS-terminating proxy (via TLS 1.3).
-- **The operator reading message content.** The server forwards ciphertext and nonce only; it holds no private key material for any session and cannot decrypt.
+- **The operator reading message content.** The server forwards ciphertext and nonce only; it holds no private key material for any session and cannot decrypt. The one exception is the optional, always-labeled AI chat: there the operator's bot is the other participant, so it decrypts the messages it answers (it keeps them in memory only for the length of the chat and never logs them).
 - **Post-session message recovery.** No database, no message persistence, session keys discarded on disconnect or Next →.
 - **Cross-session user identification.** No accounts, ephemeral per-session keypairs, no tracking cookies or client-side storage.
-- **Casual automation and spam.** Proof-of-work challenges, IP-based rate limiting, honeypot keyword detection, automatic temporary IP bans.
+- **Casual automation and spam.** Proof-of-work challenges, IP-based rate limiting, per-connection limits on frames and joins, honeypot keyword detection, automatic temporary IP bans.
 - **Third-party tracking.** No analytics, no third-party scripts, no externally-loaded fonts, no requests beyond the Emberline server.
 - **IP leakage into user-facing logs.** Abuse reports contain no IP addresses, only a timestamp and a category.
 
