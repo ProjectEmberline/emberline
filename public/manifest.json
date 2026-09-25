@@ -4,8 +4,8 @@
   "description": "Anonymous, ephemeral chat. End-to-end encrypted.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1c1713",
-  "theme_color": "#1c1713",
+  "background_color": "#070c14",
+  "theme_color": "#070c14",
   "orientation": "any",
   "icons": [
     {

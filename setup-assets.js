@@ -100,7 +100,7 @@ async function main() {
   // ── 2. Google Fonts ──────────────────────────────────────────────────────────
   console.log('\nFetching font CSS...');
   const fontCSS = await fetchFontCSS(
-    'https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap'
+    'https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;700&family=Playfair+Display:ital,wght@1,400&display=swap'
   );
 
   // Google prefixes each @font-face block with a /* subset */ comment.

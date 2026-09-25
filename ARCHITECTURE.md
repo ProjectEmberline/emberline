@@ -10,7 +10,7 @@
 
 Emberline is an ephemeral, anonymous chat platform that matches strangers on shared keywords. No accounts, no message storage, no identity. Every session is disposable.
 
-**Aesthetic:** deep-evening warm-dark. `#1c1713` paper, `#c87941` amber accent, Unbounded for headings, Inter for body.
+**Aesthetic:** "Action" — a flat `#070c14` Antarctic night with a bold, skewed uppercase headline on the left; `#e87834` ember accent, Manrope throughout, Playfair Display italic for the quiet voice. See §9.
 
 **The rule above all rules:** prefer the lean solution. If a problem can be solved with one line, do not write ten. Every layer of complexity is a future bug.
 
@@ -67,7 +67,7 @@ Persistent files (append-only, no message content):
     │   └── icon-512.png — PWA icon large
     ├── fonts/
     │   ├── fonts.css
-    │   └── *.woff2     — Unbounded + Inter (self-hosted)
+    │   └── *.woff2     — Manrope + Playfair Display italic (self-hosted)
     └── vendor/
         ├── nacl-fast.min.js
         └── nacl-util.min.js
@@ -260,7 +260,7 @@ Fonts are downloaded once via `setup-assets.js`; the NaCl libraries are npm depe
 
 ### 6.3 No Cookies, No Analytics, No Client-Side Storage
 
-No `Set-Cookie`, no tracking pixels, no third-party scripts. No `localStorage`, no `sessionStorage`, no IndexedDB — no client-side persistence of any kind. The theme toggle (dark/light) is in-session only and resets to dark on every page load.
+No `Set-Cookie`, no tracking pixels, no third-party scripts. No `localStorage`, no `sessionStorage`, no IndexedDB — no client-side persistence of any kind. The theme follows the OS colour scheme (`prefers-color-scheme`) on every page load; the dark/light toggle is in-session only.
 
 Do not add analytics or any form of client-side state persistence without updating the Privacy Policy and documenting it here.
 
@@ -347,54 +347,75 @@ Design constraints, in order: **the user must always know**, then **nobody gets 
 
 ## 9. Design System
 
+"Action": a flat Antarctic night with a bold uppercase headline on the left. The background is one flat colour (`--paper`) with no decoration — no gradients, images or background shapes. The sense of motion comes from type alone: the headline and the primary CTA are skewed `-6deg`. Ember (`--accent`) is the only colour on the page.
+
 ### 9.1 Typography
 
 | Element | Font | Weight | Size | Extras |
 |---|---|---|---|---|
-| Logo, headings, system messages | Unbounded | 500–600 | varies | `letter-spacing: -0.03em`, `line-height: 1.15` |
-| Body, messages, inputs, buttons, tag pills | Inter | 400–600 | varies | — |
+| Headline (`h1`) | Manrope | 700 | `clamp(3.5rem, 11vw, 8rem)` | uppercase, line-height 0.92, tracking −0.04em, `skewX(-6deg)` from left bottom |
+| Waiting `h2`, policy-page headings | Manrope | 700 | 2rem | uppercase, tracking −0.02em |
+| Body, messages, inputs | Manrope | 300 (400 for emphasis) | 16px body, 19px messages | line-height 1.5 |
+| Tag pills, keyword badges, CTA | Manrope | 500 | 0.875rem | uppercase, tracking 0.2–0.3em |
+| Logo, labels, text buttons, footer | Manrope | 300 | 0.6875–1rem | uppercase, tracking 0.2–0.4em |
+| Subtitle, system messages, waiting status | Playfair Display italic | 400 | 1.5rem subtitle | subtitle in `--accent-hover` |
 
 All spacing follows a **4-point grid** (4, 8, 12, 16, 20, 24, 32px).
 
-### 9.2 Colors (dark mode)
+### 9.2 Colors
 
-| Token | Value | Usage |
+Dark is the default when the OS is dark or unknown; light when the OS asks for it (§6.3).
+
+| Token (dark) | Value | Usage |
 |---|---|---|
-| `--paper` | `#1c1713` | Body background |
-| `--ink` | `#e8ddd0` | Primary text |
-| `--accent` | `#c87941` | CTAs, highlights, sent messages |
-| `--accent-light` | `#3a2415` | Accent tint (tag pills) |
-| `--muted` | `#7a6e65` | Secondary text, placeholders |
-| `--border` | `#2e2620` | Subtle borders |
-| `--msg-them-fg` | `#d4c0a0` | Received message text |
+| `--paper` | `#070c14` | Page background (flat, no gradient) |
+| `--ink` | `#dbe9f2` | Body text (~14:1) |
+| `--ink-strong` | `#f2f8fc` | Headline, input text |
+| `--muted` | `#8fabbe` | Labels, placeholders, footer (~5.5:1) |
+| `--border` | `#3a5a74` | Hairlines, disabled button |
+| `--accent` | `#e87834` | **Ember**: pills, CTA, send, focus (~5.2:1 on paper) |
+| `--accent-hover` | `#ffb070` | CTA hover; also the subtitle colour |
+| `--on-accent` | `#070c14` | Text on solid ember (~9:1) |
+| `--accent-soft` | `rgba(232,120,52,.14)` | CTA shadow, AI-offer hover |
+| `--ice` | `#7fc4ea` | Typing indicator only |
+| `--surface` | `#0b1522` | Modals, form controls |
+| `--msg-me` / `--msg-them` | `#e6f0f6` / `#f0a26b` | Own messages (white) / stranger's messages (ember) |
+
+Light is ice daylight: `--paper #f6f9fb`, `--ink #1c3242`, `--muted #5b7587`, `--border #9fbccd`, `--accent #3e88b8`, `--accent-hover #2b6a94`, `--on-accent #f6f9fb`, `--surface #edf3f7`.
+
+The only colours outside the tokens are `.btn-danger` (`#c0392b`, white text ~5.4:1) and the modal scrim. The policy pages (`/privacy`, `/terms`) are dark-only and use the dark values directly.
 
 ### 9.3 Chat Layout
 
-Messages are displayed in a **shared left-aligned column** (max-width 640px, centered). Both speakers are left-aligned. Color distinguishes voices:
-- **Received messages:** `#d4c0a0` (warm cream, ~6.8:1 contrast)
-- **Sent messages:** `#c87941` (amber, ~4.3:1 contrast — lower contrast is acceptable because users already know what they typed)
-
-Speaker changes get **16px** vertical gap. Consecutive same-speaker messages get **4px** gap. This is handled by CSS sibling selectors (`.msg.me + .msg.me`, `.msg.them + .msg.them`).
+One column, max-width 640px, centered. The stranger (`.msg.them`) is left-aligned in `--msg-them` (ember); your own messages (`.msg.me`) are right-aligned in `--msg-me` (white). In light mode the same roles are glacial blue and ink. When the conversation ends (match left, or connection lost), `body.is-over` fades every message to `--muted` over 0.6s — "the fire is out". Leave and Next clear it. Speaker changes get a **36px** gap, consecutive messages from the same speaker **6px** (`.msg.me + .msg.me`, `.msg.them + .msg.them`).
 
 No bubbles, no borders, no backgrounds on messages. Pure text.
 
-System messages use Unbounded font, centered, in `--muted` color.
+System messages are centered Playfair italic in `--muted`; matched keywords inside them are `<em>` in `--accent`. In an AI chat, `.ai-banner` (accent outline) sits above the messages for the whole conversation (`body.is-ai`).
 
-### 9.4 Header and Footer
+### 9.4 Buttons
 
-Both constrained to `max-width: 640px` with `margin: 0 auto`, matching the chat column width. This creates a single vertical axis from logo through messages through input.
+Only the primary CTA (`.btn`) is a solid ember block, skewed `-6deg`. `.btn-ghost`, `.btn-next` and modal buttons reset `transform` and `background`. Send, leave, report and next are tracked uppercase text buttons. The AI offer is an accent-outlined ghost button. Destructive actions use `.btn-danger`.
 
-### 9.5 Chat Input
+### 9.5 Header and Footer
 
-Transparent background, underline border (`1px solid var(--border)`), same font size as messages. Turns amber on focus. "send" is a plain text button in amber — no pill, no background. Leave/report/next are lowercase text buttons below.
+Header spans the full width: tracked uppercase logo on the left, live count and theme toggle on the right (the count hides below 480px wide or 600px tall). Footer is centered, tracked uppercase, in `--muted`.
 
-### 9.6 Message Height Cap
+### 9.6 Chat Input
 
-Messages have `max-height: 200px` with hidden scrollbar overflow. The textarea input also caps at 200px. When the height limit is reached, the textarea's underline turns amber and Shift+Enter is blocked (no new lines allowed).
+Transparent background, underline on `.chat-input-row` (`1px solid var(--border)`) that turns `--accent` on focus. "send" is a plain text button in `--accent`, no pill or background.
 
-### 9.7 Typing Indicator
+### 9.7 Message Height Cap
 
-"typing..." text appears inside the chat flow (appended to chat-box DOM) right below the last message. Muted italic, gently fading in and out via CSS animation. Auto-removed after 3 seconds or when a message arrives.
+Messages have `max-height: 200px` with hidden scrollbar overflow. The textarea input also caps at 200px. When the cap is reached (`.at-height-limit`), the row's underline turns `--accent` via `:has()` and Shift+Enter is blocked (no new lines allowed).
+
+### 9.8 Typing Indicator
+
+"typing..." ("AI is writing…" in an AI chat) appears inside the chat flow, right below the last message, in `--ice`, tracked 0.3em, gently fading in and out. It is removed after 3 seconds or when a message arrives.
+
+### 9.9 Motion
+
+`prefers-reduced-motion: reduce` turns off every animation and transition. The entry screen scrolls instead of clipping when it doesn't fit (landscape phones).
 
 ---
 
@@ -402,7 +423,7 @@ Messages have `max-height: 200px` with hidden scrollbar overflow. The textarea i
 
 Emberline is installable as a Progressive Web App via `manifest.json`. There is deliberately **no service worker**: it would store the app's files in the browser's Cache Storage, which conflicts with the privacy policy's promise of no persistent client-side storage. Current Chromium browsers and iOS Safari install web apps without one.
 
-- **manifest.json:** Defines app name, theme color (`#1c1713`), icons (192px + 512px ember flame).
+- **manifest.json:** Defines app name, theme color (`#070c14`), icons (192px + 512px ember flame).
 - **index.html:** Includes `<link rel="manifest">` and Apple meta tags (`apple-mobile-web-app-capable`, etc.).
 - **app.js:** Shows the footer "install" link where the browser supports it (`beforeinstallprompt` on Chromium, an instructions modal on iOS).
 - **Icons:** Three-layer ember flame (amber outer, orange middle, gold core). Generated via `generate-icons.html`.
@@ -422,4 +443,4 @@ Before writing any code, answer these in order:
 
 ---
 
-*Last updated: 17 April 2026 · Jurisdiction: Switzerland · Contact: contactall@emberline.ch*
+*Last updated: 25 September 2026 · Jurisdiction: Switzerland · Contact: contactall@emberline.ch*

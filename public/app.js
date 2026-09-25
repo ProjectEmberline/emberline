@@ -184,6 +184,7 @@ function connectionLost() {
   if (document.body.classList.contains('is-matched')) {
     hideTypingIndicator();
     appendSystemMsg('Connection lost. Press next to find someone new.');
+    document.body.classList.add('is-over');
     document.getElementById('chat-input').disabled = true;
     document.getElementById('btn-send').disabled = true;
     return;
@@ -265,8 +266,6 @@ function handleMessage(msg) {
       } else if (matchedKws.length === 1) {
         sysDiv.textContent = 'Match found on ';
         const em = document.createElement('em');
-        em.style.fontFamily = '"Unbounded", sans-serif';
-        em.style.color = '#c87941';
         em.textContent = matchedKws[0];
         sysDiv.appendChild(em);
         sysDiv.appendChild(document.createTextNode('.'));
@@ -276,8 +275,6 @@ function handleMessage(msg) {
           if (i > 0 && i < matchedKws.length - 1) sysDiv.appendChild(document.createTextNode(', '));
           if (i > 0 && i === matchedKws.length - 1) sysDiv.appendChild(document.createTextNode(' and '));
           const em = document.createElement('em');
-          em.style.fontFamily = '"Unbounded", sans-serif';
-          em.style.color = '#c87941';
           em.textContent = kw;
           sysDiv.appendChild(em);
         });
@@ -320,6 +317,7 @@ function handleMessage(msg) {
       clearOutbox();
       hideTypingIndicator();
       appendSystemMsg('Your match left the conversation.');
+      document.body.classList.add('is-over'); // the fire is out: messages turn to ash
       document.getElementById('chat-input').disabled = true;
       document.getElementById('btn-send').disabled = true;
       break;
@@ -544,7 +542,7 @@ function leaveChat() {
   myKeyPair    = null;
   sharedSecret = null;
   hideTypingIndicator();
-  document.body.classList.remove('is-matched', 'is-ai');
+  document.body.classList.remove('is-matched', 'is-ai', 'is-over');
   document.getElementById('chat-input').disabled = false;
   document.getElementById('btn-send').disabled = false;
   resetChatBox();
@@ -569,7 +567,7 @@ async function nextConversation() {
   sharedSecret = null;
 
   hideTypingIndicator();
-  document.body.classList.remove('is-matched', 'is-ai');
+  document.body.classList.remove('is-matched', 'is-ai', 'is-over');
   document.getElementById('chat-input').disabled = false;
   document.getElementById('btn-send').disabled = false;
   resetChatBox();
@@ -674,7 +672,7 @@ function openReport() {
   ta.oninput = () => {
     const len = ta.value.length;
     counter.textContent = len + ' / 500';
-    counter.style.color = len > 450 ? '#c87941' : '#4a4038';
+    counter.style.color = len > 450 ? 'var(--accent)' : 'var(--muted)';
   };
 }
 
@@ -737,12 +735,16 @@ setInterval(() => {
 }, 60000);
 
 // ── Theme toggle ──────────────────────────────────────────────────────────────
-// Theme defaults to dark on every page load. Toggle persists only for the
-// current session — no localStorage, no cookie, no tracking of preference.
+// Theme follows the OS colour scheme on every page load (prefers-color-scheme
+// is already exposed to CSS, so reading it adds no fingerprinting surface).
+// The toggle persists only for the current session — no localStorage, no
+// cookie, no tracking of preference.
 
 (function initTheme() {
-  document.documentElement.setAttribute('data-theme', 'dark');
-  updateThemeBtn('dark');
+  const light = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+  const theme = light ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  updateThemeBtn(theme);
 })();
 
 function updateThemeBtn(theme) {

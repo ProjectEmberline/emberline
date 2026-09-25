@@ -916,12 +916,13 @@ const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <link href="/fonts/fonts.css" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', sans-serif; background: #1c1713; color: #e8ddd0; max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem; line-height: 1.7; }
-  h1 { font-family: 'Unbounded', sans-serif; font-size: 2rem; margin-bottom: 0.4rem; }
-  h2 { font-family: 'Unbounded', sans-serif; font-size: 1.2rem; margin: 2rem 0 0.5rem; }
-  p { color: #a89070; margin-bottom: 1rem; } a { color: #c87941; }
-  .date { font-size: 0.85rem; color: #5a4e44; margin-bottom: 2rem; }
-  hr { border: none; border-top: 1px solid #2e2620; margin: 2rem 0; }
+  body { font-family: 'Manrope', system-ui, sans-serif; font-weight: 300; background: #070c14; color: #dbe9f2; max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem; line-height: 1.7; }
+  h1, h2 { font-family: 'Manrope', system-ui, sans-serif; font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase; color: #f2f8fc; }
+  h1 { font-size: 2rem; margin-bottom: 0.4rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }
+  p { margin-bottom: 1rem; } a { color: #e87834; }
+  .date { font-size: 0.85rem; color: #8fabbe; margin-bottom: 2rem; }
+  hr { border: none; border-top: 1px solid #3a5a74; margin: 2rem 0; }
   .small { font-size: 0.85rem; }
 </style>
 </head>
@@ -966,16 +967,17 @@ const TERMS_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <link href="/fonts/fonts.css" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', sans-serif; background: #1c1713; color: #e8ddd0; max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem; line-height: 1.7; }
-  h1 { font-family: 'Unbounded', sans-serif; font-size: 2rem; margin-bottom: 0.4rem; }
-  h2 { font-family: 'Unbounded', sans-serif; font-size: 1.2rem; margin: 2rem 0 0.5rem; color: #e8ddd0; }
-  p { color: #a89070; margin-bottom: 1rem; } ul { color: #a89070; padding-left: 1.5rem; margin-bottom: 1rem; }
-  li { margin-bottom: 0.4rem; } a { color: #c87941; }
-  .date { font-size: 0.85rem; color: #5a4e44; margin-bottom: 2rem; }
-  .notice { border-left: 2px solid #c87941; padding-left: 1rem; margin: 1.5rem 0; }
-  .notice p { color: #c4a882; }
-  hr { border: none; border-top: 1px solid #2e2620; margin: 2rem 0; }
-  .small { font-size: 0.85rem; color: #5a4e44; }
+  body { font-family: 'Manrope', system-ui, sans-serif; font-weight: 300; background: #070c14; color: #dbe9f2; max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem; line-height: 1.7; }
+  h1, h2 { font-family: 'Manrope', system-ui, sans-serif; font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase; color: #f2f8fc; }
+  h1 { font-size: 2rem; margin-bottom: 0.4rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }
+  p { margin-bottom: 1rem; } ul { padding-left: 1.5rem; margin-bottom: 1rem; }
+  li { margin-bottom: 0.4rem; } a { color: #e87834; }
+  .date { font-size: 0.85rem; color: #8fabbe; margin-bottom: 2rem; }
+  .notice { border-left: 2px solid #e87834; padding-left: 1rem; margin: 1.5rem 0; }
+  .notice p { color: #ffb070; }
+  hr { border: none; border-top: 1px solid #3a5a74; margin: 2rem 0; }
+  .small { font-size: 0.85rem; color: #8fabbe; }
 </style>
 </head>
 <body>
