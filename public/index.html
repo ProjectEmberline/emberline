@@ -202,9 +202,8 @@
 
   .msg {
     max-width: 85%; font-size: 1.1875rem; line-height: 1.5; margin-top: 36px; flex-shrink: 0;  /* else a long chat squeezes every bubble instead of scrolling */
-    white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow-y: auto; scrollbar-width: none;
+    white-space: pre-wrap; overflow-wrap: anywhere;
   }
-  .msg::-webkit-scrollbar { display: none; }
   .msg:first-child { margin-top: 0; }
   .msg.me + .msg.me, .msg.them + .msg.them { margin-top: 6px; }
   .msg.them { align-self: flex-start; text-align: left;  color: var(--msg-them); }

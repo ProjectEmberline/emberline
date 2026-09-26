@@ -125,6 +125,7 @@ function resetChatBox(text) {
   d.className = 'msg system';
   d.textContent = text || 'Finding your match…';
   box.appendChild(d);
+  chatPinned = true;
 }
 
 // ── Connect & send ────────────────────────────────────────────────────────────
@@ -281,6 +282,7 @@ function handleMessage(msg) {
         sysDiv.appendChild(document.createTextNode('.'));
       }
       chatBox.appendChild(sysDiv);
+      chatPinned = true;
       if (!sharedSecret) {
         appendSystemMsg('Could not set up encryption with this match. Press next to find someone else.');
         document.getElementById('chat-input').disabled = true;
@@ -402,24 +404,39 @@ function stillWaiting(socket) {
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
+// Stay pinned to the newest message unless the reader scrolled up. Tracked on
+// scroll rather than measured on arrival: a growing input or the phone keyboard
+// shrinks the box without scrolling it, which used to hide the newest message
+// and make the next one look like the reader had scrolled away.
+const chatBoxEl = document.getElementById('chat-box');
+let chatPinned = true;
+
+function scrollChatToEnd() {
+  chatBoxEl.scrollTop = chatBoxEl.scrollHeight;
+  chatPinned = true;
+}
+
+chatBoxEl.addEventListener('scroll', () => {
+  chatPinned = chatBoxEl.scrollHeight - chatBoxEl.scrollTop - chatBoxEl.clientHeight <= 20;
+}, { passive: true });
+new ResizeObserver(() => { if (chatPinned) scrollChatToEnd(); }).observe(chatBoxEl);
+
 function appendMsg(text, side) {
-  const box = document.getElementById('chat-box');
-  const atBottom = box.scrollHeight - box.scrollTop <= box.clientHeight + 20;
   const d = document.createElement('div');
   d.className = 'msg ' + side;
-  d.textContent = text;
+  // Messages show in full, so cap blank-line padding (300 newlines = a wall)
+  d.textContent = text.replace(/\n{3,}/g, '\n\n');
 
-  box.appendChild(d);
-  if (atBottom) requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  chatBoxEl.appendChild(d);
+  if (side === 'me' || chatPinned) scrollChatToEnd();
 }
 
 function appendSystemMsg(text) {
-  const box = document.getElementById('chat-box');
   const d = document.createElement('div');
   d.className = 'msg system';
   d.textContent = text;
-  box.appendChild(d);
-  requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  chatBoxEl.appendChild(d);
+  scrollChatToEnd();
 }
 
 // ── Typing indicator ─────────────────────────────────────────────────────────
@@ -438,7 +455,7 @@ function showTypingIndicator() {
   }
   el.style.display = 'block';
   box.appendChild(el);
-  requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  if (chatPinned) scrollChatToEnd();
   clearTimeout(_typingTimeout);
   _typingTimeout = setTimeout(hideTypingIndicator, 3000);
 }
