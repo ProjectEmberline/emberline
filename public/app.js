@@ -825,6 +825,10 @@ document.getElementById('chat-input').addEventListener('input', () => {
   // Auto-grow up to max-height
   ta.style.height = 'auto';
   ta.style.height = ta.scrollHeight + 'px';
+  // The 'auto' step briefly grows the chat box, which clamps its scroll up by a
+  // line; restore it now or the scroll handler reads that as the reader leaving
+  // the bottom and the newest message stays half hidden
+  if (chatPinned) scrollChatToEnd();
   // Height limit feedback
   const atLimit = ta.scrollHeight > 200;
   ta.classList.toggle('at-height-limit', atLimit);
