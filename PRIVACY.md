@@ -2,7 +2,7 @@
 
 > This document mirrors the Privacy Policy served at [emberline.ch/privacy](https://emberline.ch/privacy). If the two ever diverge, the served version is canonical. The repository copy exists for audit, offline reference, and version history.
 
-**Effective date:** 24 September 2026 · **Jurisdiction:** Switzerland
+**Effective date:** 26 September 2026 · **Jurisdiction:** Switzerland
 
 Emberline is an anonymous, ephemeral chat platform. This policy describes what data we collect, what we do not collect, and your rights under Swiss law (nFADP).
 
@@ -16,7 +16,7 @@ When a user submits an abuse report, we record the report timestamp, the reason 
 
 ## IP addresses
 
-We do not log IP addresses in association with chat content, reports, keywords, or any durable user record. An IP-based abuse defense runs at the connection layer: when a client trips a rate limit, fails a proof-of-work check, or hits a honeypot, an entry is written to an abuse log containing only a timestamp, the triggered rule, and the source IP. This log feeds a ban system that temporarily blocks repeat offenders and is rotated after 90 days. It is never cross-referenced against reports, conversations, or keywords — and cannot be, because none of those are stored. This is the minimum defense a fully anonymous service requires to remain functional.
+We do not log IP addresses in association with chat content, reports, keywords, or any durable user record. An IP-based abuse defense runs at the connection layer: when a client trips a rate limit, floods the server with messages, fails a proof-of-work check, hits a honeypot, or tries to connect from another website, an entry is written to an abuse log containing only a timestamp, the triggered rule, and the source IP. The same log records when an IP is banned. Separately, to enforce rate limits, the server keeps IP addresses in memory while you are connected and for up to two hours afterwards (24 hours for a banned IP); this is never written to disk. This log feeds a ban system that temporarily blocks repeat offenders and is rotated after 90 days. It is never cross-referenced against reports, conversations, or keywords — and cannot be, because none of those are stored. This is the minimum defense a fully anonymous service requires to remain functional.
 
 ## End-to-end encryption
 

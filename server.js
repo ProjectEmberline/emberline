@@ -905,7 +905,7 @@ app.post('/report', (req, res) => {
 // Effective dates — update manually when the corresponding policy changes.
 // Hardcoding avoids the bug where `new Date()` made the "effective date"
 // slide forward every time someone loaded the page.
-const POLICY_EFFECTIVE_DATE = '24 September 2026';
+const POLICY_EFFECTIVE_DATE = '26 September 2026';
 const TERMS_EFFECTIVE_DATE  = '24 September 2026';
 
 const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
@@ -935,7 +935,7 @@ const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <h2>What we do collect</h2>
 <p>When a user submits an abuse report, we record the report timestamp, the reason category, and — only if the reporter chooses to write them — up to 500 characters of free-text details. No chat messages are attached, and no IP address or user identity is recorded with the report. Please do not include personal information in the details. Reports are retained for a maximum of 90 days.</p>
 <h2>IP addresses</h2>
-<p>We do not log IP addresses in association with chat content, reports, keywords, or any durable user record. An IP-based abuse defense runs at the connection layer: when a client trips a rate limit, fails a proof-of-work check, or hits a honeypot, an entry is written to an abuse log containing only a timestamp, the triggered rule, and the source IP. This log feeds a ban system that temporarily blocks repeat offenders and is rotated after 90 days. It is never cross-referenced against reports, conversations, or keywords — and cannot be, because none of those are stored. This is the minimum defense a fully anonymous service requires to remain functional.</p>
+<p>We do not log IP addresses in association with chat content, reports, keywords, or any durable user record. An IP-based abuse defense runs at the connection layer: when a client trips a rate limit, floods the server with messages, fails a proof-of-work check, hits a honeypot, or tries to connect from another website, an entry is written to an abuse log containing only a timestamp, the triggered rule, and the source IP. The same log records when an IP is banned. Separately, to enforce rate limits, the server keeps IP addresses in memory while you are connected and for up to two hours afterwards (24 hours for a banned IP); this is never written to disk. This log feeds a ban system that temporarily blocks repeat offenders and is rotated after 90 days. It is never cross-referenced against reports, conversations, or keywords — and cannot be, because none of those are stored. This is the minimum defense a fully anonymous service requires to remain functional.</p>
 <h2>End-to-end encryption</h2>
 <p>All messages are encrypted on your device using the NaCl box construction (Curve25519 + XSalsa20 + Poly1305). Only the two participants can decrypt messages. The server relays encrypted data it cannot read. In an optional AI chat, the AI is the other participant (see below).</p>
 <h2>Optional AI chat</h2>
@@ -1090,6 +1090,19 @@ app.use(express.static(PUBLIC_DIR, {
     if (filePath.endsWith('.html')) res.setHeader('Content-Type', 'text/html');
   }
 }));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Errors — replaces Express's default handler, which logs every error's stack
+// (a malformed /report body included) and, outside production, sends it back.
+// Client errors are answered and never logged; server bugs log the stack only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = err.status >= 400 && err.status < 500 ? err.status : 500;
+  if (status === 500) console.error('[http] error:', err.stack || err);
+  res.status(status).json({ error: status === 500 ? 'server error' : 'bad request' });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Start

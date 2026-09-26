@@ -290,19 +290,18 @@ function handleMessage(msg) {
       break;
 
     case 'message': {
-      let plaintext = msg.text || '';
-      if (msg.ciphertext && msg.nonce && sharedSecret) {
-        try {
-          const decrypted = nacl.box.open.after(
-            nacl.util.decodeBase64(msg.ciphertext),
-            nacl.util.decodeBase64(msg.nonce),
-            sharedSecret
-          );
-          if (decrypted) plaintext = nacl.util.encodeUTF8(decrypted);
-          else plaintext = '[decryption failed]';
-        } catch(e) {
-          plaintext = '[decryption error]';
-        }
+      // Encrypted frames only: anything else did not come from the partner.
+      if (typeof msg.ciphertext !== 'string' || typeof msg.nonce !== 'string' || !sharedSecret) break;
+      let plaintext;
+      try {
+        const decrypted = nacl.box.open.after(
+          nacl.util.decodeBase64(msg.ciphertext),
+          nacl.util.decodeBase64(msg.nonce),
+          sharedSecret
+        );
+        plaintext = decrypted ? nacl.util.encodeUTF8(decrypted) : '[decryption failed]';
+      } catch(e) {
+        plaintext = '[decryption error]';
       }
       hideTypingIndicator();
       appendMsg(plaintext, 'them');
@@ -704,7 +703,7 @@ async function submitReport() {
     await fetch('/report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason, details, ts: new Date().toISOString() })
+      body: JSON.stringify({ reason, details })
     });
   } catch(e) {}
   closeReport();

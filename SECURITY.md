@@ -80,7 +80,7 @@ Emberline is designed to defend against a specific set of threats. Stating them 
 - **Cross-session user identification.** No accounts, ephemeral per-session keypairs, no tracking cookies or client-side storage.
 - **Casual automation and spam.** Proof-of-work challenges, IP-based rate limiting, per-connection limits on frames and joins, honeypot keyword detection, automatic temporary IP bans.
 - **Third-party tracking.** No analytics, no third-party scripts, no externally-loaded fonts, no requests beyond the Emberline server.
-- **IP leakage into user-facing logs.** Abuse reports contain no IP addresses, only a timestamp and a category.
+- **IP leakage into user-facing logs.** Abuse reports contain no IP addresses — only a timestamp, a category, and any details the reporter chooses to write.
 
 ### What we do not defend against
 

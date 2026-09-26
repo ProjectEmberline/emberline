@@ -33,6 +33,8 @@ function freePort() {
   });
 }
 
+let output = ''; // everything the server printed
+
 before(async () => {
   const port = await freePort();
   HTTP   = `http://127.0.0.1:${port}`;
@@ -44,7 +46,6 @@ before(async () => {
            MAX_CONNS_PER_IP: String(MAX_CONNS_PER_IP), BAN_ALLOWLIST: '', BOT_TOKEN },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  let output = '';
   server.stdout.on('data', d => { output += d; });
   server.stderr.on('data', d => { output += d; });
   for (let i = 0; i < 50; i++) {
@@ -144,6 +145,19 @@ test('CSP has no unsafe-inline and allows the page style blocks by hash', async 
   assert.match(csp, /style-src 'self'( 'sha256-[A-Za-z0-9+/=]+'){3}/);
   const html = (await (await fetch(HTTP + '/')).text()).replace(/<style>[\s\S]*?<\/style>/g, '');
   assert.ok(!/\sstyle="/.test(html), 'no inline style attributes');
+});
+
+test('a malformed report gets a plain 400: no stack trace sent or logged', async () => {
+  const res = await fetch(HTTP + '/report', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': freshIp() },
+    body: '{"reason":"spam","details":"my name is Alice" x}',
+  });
+  assert.equal(res.status, 400);
+  const body = await res.text();
+  assert.doesNotMatch(body, /SyntaxError|node_modules|Alice/);
+  await sleep(100);
+  assert.doesNotMatch(output, /SyntaxError|Alice/);
 });
 
 test('client IP comes from the proxy-added X-Forwarded-For entry', async () => {
