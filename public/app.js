@@ -644,13 +644,8 @@ function chooseAi() {
 
 document.getElementById('keyword-input').addEventListener('keydown', e => {
   const input = e.target;
-  // Space creates a tag from whatever is typed
-  if (e.key === ' ') {
-    e.preventDefault();
-    if (input.value.trim()) { addTag(input.value); input.value = ''; }
-  }
-  // Enter creates a tag (same as Space)
-  if (e.key === 'Enter') {
+  // Enter, Space and comma create a tag from whatever is typed
+  if (e.key === 'Enter' || e.key === ' ' || e.key === ',') {
     e.preventDefault();
     if (input.value.trim()) { addTag(input.value); input.value = ''; }
   }
@@ -659,6 +654,24 @@ document.getElementById('keyword-input').addEventListener('keydown', e => {
     removeTag(tags[tags.length - 1]);
   }
 });
+
+// Phone keyboards (Android in particular) report Space and comma as
+// "Unidentified" keydowns, so the character lands in the field instead of
+// being caught above. Split on it once it's there; this also handles pasting
+// "music, films games". Text after the last separator is still being typed.
+const TAG_SEPARATOR = /[\s,，、]+/;
+function splitTypedTags(input) {
+  if (!TAG_SEPARATOR.test(input.value)) return;
+  const parts = input.value.split(TAG_SEPARATOR);
+  input.value = parts.pop();
+  parts.forEach(addTag);
+}
+document.getElementById('keyword-input').addEventListener('input', e => {
+  if (!e.isComposing) splitTypedTags(e.target);
+});
+document.getElementById('keyword-input').addEventListener('compositionend', e =>
+  splitTypedTags(e.target)
+);
 
 // Expose globals
 // ── Report ───────────────────────────────────────────────────────────────────
