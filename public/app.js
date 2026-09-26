@@ -109,7 +109,7 @@ function renderTags() {
   });
   // Update placeholder
   const input = document.getElementById('keyword-input');
-  input.placeholder = tags.length === 0 ? '' :
+  input.placeholder = tags.length === 0 ? 'type here…' :
                       tags.length < 10  ? 'add another\u2026' : '';
   input.disabled = tags.length >= 10;
   // Update button state
