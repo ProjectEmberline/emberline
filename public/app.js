@@ -625,26 +625,30 @@ async function nextConversation() {
 }
 
 // ── Optional AI chat ─────────────────────────────────────────────────────────
-// Only ever on explicit request. After 10s without a human match, if an AI
-// is available, the waiting screen offers it (re-checked every 10s).
+// Only ever on explicit request. While searching, if an AI is available, the
+// waiting screen offers it from the start (re-checked every 10s).
 
 let _aiOfferTimer = null;
+let _aiOfferRun = 0;
 
 function startAiOffer() {
   stopAiOffer();
-  const socket = ws;
+  const socket = ws, run = ++_aiOfferRun;
+  // A check still fetching when the offer restarts must not start a second loop
+  const live = () => run === _aiOfferRun && stillWaiting(socket);
   const check = async () => {
-    if (!stillWaiting(socket)) return stopAiOffer();
+    if (!live()) return;
     try {
       const { ai } = await (await fetch('/count')).json();
-      if (stillWaiting(socket)) document.getElementById('ai-offer').hidden = !ai;
+      if (live()) document.getElementById('ai-offer').hidden = !ai;
     } catch {}
-    _aiOfferTimer = setTimeout(check, 10000);
+    if (live()) _aiOfferTimer = setTimeout(check, 10000);
   };
-  _aiOfferTimer = setTimeout(check, 10000);
+  check();
 }
 
 function stopAiOffer() {
+  _aiOfferRun++;
   clearTimeout(_aiOfferTimer);
   _aiOfferTimer = null;
   document.getElementById('ai-offer').hidden = true;
