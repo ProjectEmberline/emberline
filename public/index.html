@@ -201,7 +201,7 @@
   .chat-box::-webkit-scrollbar { display: none; }
 
   .msg {
-    max-width: 85%; font-size: 1.1875rem; line-height: 1.5; margin-top: 36px;
+    max-width: 85%; font-size: 1.1875rem; line-height: 1.5; margin-top: 36px; flex-shrink: 0;  /* else a long chat squeezes every bubble instead of scrolling */
     white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow-y: auto; scrollbar-width: none;
   }
   .msg::-webkit-scrollbar { display: none; }
