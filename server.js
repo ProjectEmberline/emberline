@@ -1,12 +1,13 @@
 /**
- * Emberline — Matchmaking Server
+ * Emberline — Profiles Server
  * ─────────────────────────────
  * Install:  npm install ws express
  * Run:      node server.js
  *
  * Privacy & legal:
  *   - IP addresses are written only to abuse.log (timestamp + rule + IP), never
- *     alongside chats, keywords or reports
+ *     alongside chats, profiles or reports
+ *   - Profiles, requests and chats live in memory only, while their owner is online
  *   - No message content is ever stored (E2EE relay only)
  *   - Reports are written to reports.log (reason + timestamp + optional details)
  *   - Privacy policy served at /privacy
@@ -20,8 +21,16 @@
  *                X-Forwarded-For. Set to 0 if clients connect directly.
  *   BAN_ALLOWLIST  comma-separated IPs that are never auto-banned
  *   MAX_CONNS_PER_IP  concurrent WebSocket connections per IP (default 20)
+ *   MAX_PROFILES_PER_IP  concurrent profiles per IP (default 5)
  *   BOT_TOKEN    shared secret for the operator's AI chat bots (bots/ember-bot.js).
  *                Unset = AI chat disabled. Never commit it.
+ *   Tests shorten these (ms): REQUEST_TTL_MS, IDLE_WARNING_MS, IDLE_LOGOFF_MS,
+ *                RECONNECT_GRACE_MS, COUNTS_TICK_MS
+ *
+ * Name and word filters (plain text, one entry per line, # for comments), read
+ * from LOG_DIR and reloaded when they change:
+ *   reserved-names.txt  names containing an entry are refused (default list below)
+ *   blocked-words.txt   refused in names and interests (empty by default)
  */
 
 'use strict';
@@ -68,14 +77,11 @@ const server = http.createServer(app);
 
 const MAX_CONNS_PER_IP        = envInt('MAX_CONNS_PER_IP', 20); // concurrent WS connections per IP
 const MAX_WS_CONNECTS_PER_MIN = 20;  // new WS connections per IP per minute
-                                      // (20 allows rapid Next → clicks without hitting the limit)
 const MAX_HTTP_API_RPM        = 60;  // /challenge, /count, /report per IP per minute
 const MAX_HTTP_STATIC_RPM     = 300; // static assets per IP per minute
 
 const MAX_REPORTS_PER_IP      = 10;  // abuse reports per IP per hour
 const MAX_CHALLENGES_PER_IP   = 60;  // challenge tokens per IP per hour
-                                      // (60 allows Next → + fallback timer without throttling)
-const MAX_KEYWORD_POOLS       = 11;   // keyword pools a single client can join (10 + __random__)
 const CHALLENGE_TTL_MS        = 60_000;
 const POW_DIFFICULTY          = 4;
 const HEARTBEAT_INTERVAL_MS   = 60_000;  // 60s — halves ping overhead vs 30s while still
@@ -97,9 +103,33 @@ const BAN_ALLOWLIST           = new Set(
 );
 
 // Hard memory ceilings — protect against flood even if rate limits are bypassed
-const MAX_WAITING_POOL_KEYS   = 10_000;
 const MAX_CHALLENGES_STORED   = 5_000;
-const MAX_ROOMS               = 20_000;
+const MAX_PROFILES            = 20_000;
+const MAX_REQUESTS            = 100_000;
+const MAX_CHATS               = 100_000;
+
+// Profiles (see PROFILES.md). All in memory, all per person.
+const MAX_PROFILES_PER_IP     = envInt('MAX_PROFILES_PER_IP', 5);  // concurrent
+const MAX_INTERESTS           = 10;
+const GENDERS = new Set(['', 'woman', 'man', 'trans woman (MtF)', 'trans man (FtM)', 'non-binary', 'genderfluid']);
+const MAX_OUTGOING_REQUESTS   = 20;   // open requests a profile has sent
+const MAX_INCOMING_REQUESTS   = 30;   // open requests a profile can receive
+const MAX_ACTIVE_CHATS        = 20;
+const REQUEST_TTL_MS          = envInt('REQUEST_TTL_MS', 10 * 60_000);
+const REQUEST_BURST           = 5;        // 5 requests…
+const REQUEST_REFILL_MS       = 12_000;   // …a minute
+const MAX_REQUEST_CHARS       = 200;
+const MAX_REQUEST_CT_B64      = Math.ceil((MAX_REQUEST_CHARS * 3 + 16) / 3) * 4; // 824
+const SEARCH_RESULTS          = 20;       // random sample of the matches
+const SEARCH_BURST            = 10;
+const SEARCH_REFILL_MS        = 3_000;
+const IDLE_WARNING_MS         = envInt('IDLE_WARNING_MS', 28 * 60_000);
+const IDLE_LOGOFF_MS          = envInt('IDLE_LOGOFF_MS', 30 * 60_000);
+const RECONNECT_GRACE_MS      = envInt('RECONNECT_GRACE_MS', 5 * 60_000);
+const COUNTS_TICK_MS          = Math.max(100, envInt('COUNTS_TICK_MS', 5_000));
+const TOP_INTERESTS           = 12;
+const MAX_WATCHED_INTERESTS   = 40;
+const MAX_ALL_INTERESTS       = 200;
 
 // Chat message relay. Token bucket per connection: bursts of MSG_BURST are
 // fine (network jitter can bunch frames together), sustained rate is one
@@ -112,14 +142,13 @@ const MSG_REFILL_MS           = 300;
 // the socket and counts as a strike.
 const FRAME_BURST             = 30;
 const FRAME_REFILL_MS         = 100;
-// Joins (incl. join_ai). Each one can match with someone, so this caps how fast
-// a client can cycle through the people waiting. A proof-of-work is only needed
-// once per socket, so it can't do that job. Over the limit the client is asked
-// to retry later (no strike).
+// Creating a profile and starting an AI chat. A proof-of-work is only needed
+// once per socket, so this caps how fast one socket can churn through
+// profiles or bots. Over the limit the client is asked to retry later (no strike).
 const JOIN_BURST              = 5;
 const JOIN_REFILL_MS          = 3_000;
 const MAX_JOINS_PER_IP_PER_MIN = 120;  // across all sockets of one IP
-// Must match maxlength on #chat-input. A JS string of N UTF-16 units encodes
+// Must match maxlength on the chat input. A JS string of N UTF-16 units encodes
 // to at most 3N UTF-8 bytes; NaCl box adds a 16-byte tag; base64 is 4/3.
 const MAX_MESSAGE_CHARS       = 300;
 const MAX_CIPHERTEXT_B64      = Math.ceil((MAX_MESSAGE_CHARS * 3 + 16) / 3) * 4; // 1224
@@ -127,7 +156,6 @@ const CIPHERTEXT_RE           = /^[A-Za-z0-9+/]+={0,2}$/;
 const NONCE_RE                = /^[A-Za-z0-9+/]{32}$/; // 24-byte NaCl nonce
 
 const HONEYPOT_KEYWORD = '__honeypot__';
-const MAX_RECENT_PARTNERS     = 20;   // per-connection cooldown to avoid re-matching the same pair
 
 // Allowed WebSocket origins — set to your production domain(s).
 // null/undefined origin (non-browser clients) is allowed so CLI tools still work.
@@ -145,9 +173,14 @@ const PUBKEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 // In-memory state  (never written to disk)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const waitingPool = new Map();  // keyword → Set<ws>
-const rooms       = new Map();  // roomId  → { a: ws, b: ws }
-const challenges  = new Map();  // token   → { prefix, expiresAt, ip }
+const challenges    = new Map();  // token → { prefix, expiresAt, ip }
+const profiles      = new Map();  // id → profile (see createProfile)
+const byName        = new Map();  // lowercased name → id
+const byToken       = new Map();  // resume token → id
+const byInterest    = new Map();  // interest → Set<id>; also the source of the counts
+const profilesPerIp = new Map();  // ip → concurrent profiles
+const requests      = new Map();  // id → { from, to, ciphertext, nonce, expiresAt, declined }
+const chats         = new Map();  // id → { a, b, ai, bot, open: Set<profile id> }
 
 // Per-IP rate tracking — values are ephemeral, never persisted
 const ipConnections  = new Map();  // ip → count (concurrent)
@@ -158,8 +191,8 @@ const reportThrottle = new Map();  // ip → { count, resetAt }
 const challengeRate  = new Map();  // ip → { count, resetAt }
 const joinRate       = new Map();  // ip → { count, resetAt }
 const lastRateStrike = new Map();  // ip → timestamp of the last rate-limit strike
-// Operator-run AI chat bots (see bots/). Humans are only ever matched with a
-// bot after explicitly opting in, and the match is always labeled as AI.
+// Operator-run AI chat bots (see bots/). A person only ever chats with a bot
+// after choosing to, and the chat is always labeled as AI.
 const botSockets     = new Set();  // every authenticated bot connection
 const idleBots       = new Set();  // bots ready for a new conversation
 
@@ -263,7 +296,7 @@ function takeToken(ws, key, burst, refillMs) {
   return Math.ceil((1 - b.tokens) * refillMs);
 }
 
-// How long a person must wait before their next join (0 = go ahead).
+// How long a person must wait before their next profile or AI chat (0 = go ahead).
 function joinWait(ws) {
   const wait = takeToken(ws, '_joinBucket', JOIN_BURST, JOIN_REFILL_MS);
   if (wait) return wait;
@@ -272,6 +305,28 @@ function joinWait(ws) {
   }
   return 0;
 }
+
+// Name and word filters, editable without a release (see header)
+const DEFAULT_RESERVED_NAMES = ['admin', 'emberline', 'moderator', 'support', 'system', 'official'];
+const FILTER_FILES = {
+  reserved: path.join(LOG_DIR, 'reserved-names.txt'),
+  blocked:  path.join(LOG_DIR, 'blocked-words.txt'),
+};
+let reservedNames = DEFAULT_RESERVED_NAMES;
+let blockedWords  = [];
+function readList(file, fallback) {
+  try {
+    return fs.readFileSync(file, 'utf8').split('\n')
+      .map(l => l.replace(/#.*/, '').trim().normalize('NFC').toLowerCase()).filter(Boolean);
+  } catch { return fallback; } // no file: defaults
+}
+function loadFilters() {
+  reservedNames = readList(FILTER_FILES.reserved, DEFAULT_RESERVED_NAMES);
+  blockedWords  = readList(FILTER_FILES.blocked, []);
+}
+loadFilters();
+// Polling rather than fs.watch: the files are bind-mounted into the container
+for (const f of Object.values(FILTER_FILES)) fs.watchFile(f, { interval: 10_000, persistent: false }, loadFilters);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Periodic sweep — evict expired entries, keep all maps bounded
@@ -384,6 +439,226 @@ app.use((req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Profiles: in-memory directory, requests and chats
+// ─────────────────────────────────────────────────────────────────────────────
+// A profile exists only while its owner is online. It is bound to one socket;
+// after an unclean disconnect it waits RECONNECT_GRACE_MS for a `resume` with
+// its secret token, then it is deleted. Nothing here is ever written to disk.
+
+const newId  = () => crypto.randomBytes(16).toString('base64url');
+const ID_RE  = /^[A-Za-z0-9_-]{22}$/;
+const NAME_RE = /^[A-Za-z0-9_.-]{3,20}$/;
+
+// Letters of any language, digits and "-"; lowercase, NFC, 2–24 chars.
+function cleanInterest(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.normalize('NFC').toLowerCase()
+    .replace(/[^\p{L}\p{N}-]/gu, '').replace(/^-+|-+$/g, '').slice(0, 24);
+}
+
+function bucket(n) {
+  if (n >= 50) return '50+';
+  if (n >= 25) return '25+';
+  if (n >= 10) return '10+';
+  if (n >= 5)  return '5–9';
+  if (n >= 1)  return '1–4';
+  return '0';
+}
+
+const containsAny = (text, words) => { const t = text.toLowerCase(); return words.some(w => t.includes(w)); };
+
+// Public part of a profile: what other people see
+const summary = p => ({ id: p.id, name: p.name, gender: p.gender, interests: p.interests, pubKey: p.pubKey, accepting: p.accepting });
+const toProfile = (p, obj) => { if (p?.ws) send(p.ws, obj); };
+const blockedBetween = (a, b) => a.blocked.has(b.id) || b.blocked.has(a.id);
+const openIncoming = p => { let n = 0; for (const rid of p.inbound) if (!requests.get(rid)?.declined) n++; return n; };
+
+function isActiveChat(c) { return c.ai ? !!c.bot : c.open.size === 2; }
+function activeChats(p) { let n = 0; for (const cid of p.chats) { const c = chats.get(cid); if (c && isActiveChat(c)) n++; } return n; }
+function partnerId(c, pid) { return c.a === pid ? c.b : c.a; }
+function chatBetween(a, b) {
+  for (const cid of a.chats) { const c = chats.get(cid); if (c && !c.ai && partnerId(c, a.id) === b.id && c.open.size === 2) return c; }
+  return null;
+}
+function pendingBetween(a, b) {
+  for (const rid of a.outgoing) { const r = requests.get(rid); if (r && r.to === b.id) return r; }
+  // One a declined doesn't count: a can still ask b
+  for (const rid of b.outgoing) { const r = requests.get(rid); if (r && r.to === a.id && !r.declined) return r; }
+  return null;
+}
+
+function createProfile(ws, { name, gender, interests, pubKey }) {
+  const p = {
+    id: newId(), name, gender, interests, pubKey,
+    ws: null, ip: ws._ip, resumeToken: newId() + newId(),
+    accepting: true, lastActiveAt: Date.now(), idleWarned: false,
+    outgoing: new Set(), inbound: new Set(), chats: new Set(),
+    blocked: new Set(), blockedBy: new Set(), noAnswer: new Set(), noAnswerBy: new Set(),
+    graceTimer: null, watch: { on: false, interests: [], last: '' },
+  };
+  profiles.set(p.id, p);
+  byName.set(name.toLowerCase(), p.id);
+  byToken.set(p.resumeToken, p.id);
+  for (const t of interests) {
+    const s = byInterest.get(t) || new Set();
+    s.add(p.id); byInterest.set(t, s);
+  }
+  profilesPerIp.set(p.ip, (profilesPerIp.get(p.ip) || 0) + 1);
+  attach(p, ws);
+  return p;
+}
+
+function attach(p, ws) {
+  clearTimeout(p.graceTimer);
+  p.graceTimer = null;
+  p.ws = ws;
+  ws._profile = p.id;
+  p.lastActiveAt = Date.now();
+  p.idleWarned = false;
+}
+
+// What a (re)connected client needs to bring its view in line with the server
+function stateSnapshot(p) {
+  const incoming = [], outgoing = [], chatList = [];
+  for (const rid of p.inbound) {
+    const r = requests.get(rid);
+    if (!r || r.declined) continue;
+    incoming.push({ requestId: r.id, from: summary(profiles.get(r.from)), ciphertext: r.ciphertext, nonce: r.nonce, expiresIn: r.expiresAt - Date.now() });
+  }
+  for (const rid of p.outgoing) {
+    const r = requests.get(rid);
+    if (r) outgoing.push({ requestId: r.id, to: r.to, expiresIn: r.expiresAt - Date.now() });
+  }
+  for (const cid of p.chats) {
+    const c = chats.get(cid);
+    if (!c) continue;
+    if (c.ai) { chatList.push({ chatId: c.id, ai: true, open: !!c.bot }); continue; }
+    const other = profiles.get(partnerId(c, p.id));
+    chatList.push({ chatId: c.id, partnerId: partnerId(c, p.id), open: c.open.size === 2, away: !!other && !other.ws });
+  }
+  return { type: 'state', accepting: p.accepting, incoming, outgoing, chats: chatList };
+}
+
+// ── Requests ─────────────────────────────────────────────────────────────────
+
+function dropRequest(r, why) {
+  clearTimeout(r.timer);
+  requests.delete(r.id);
+  const from = profiles.get(r.from), to = profiles.get(r.to);
+  from?.outgoing.delete(r.id);
+  to?.inbound.delete(r.id);
+  // The recipient hears nothing about a request it already declined
+  if ((why === 'withdrawn' || why === 'from_gone') && !r.declined) toProfile(to, { type: 'request_gone', requestId: r.id });
+  if (why === 'to_gone') toProfile(from, { type: 'request_gone', requestId: r.id });
+}
+
+// No answer within REQUEST_TTL_MS. A decline ends up here too, at the same
+// time and with the same frame, so the sender can't tell the two apart.
+function expireRequest(r) {
+  if (!requests.has(r.id)) return;
+  const from = profiles.get(r.from), to = profiles.get(r.to);
+  if (from && to) { from.noAnswer.add(to.id); to.noAnswerBy.add(from.id); }
+  toProfile(from, { type: 'request_expired', requestId: r.id });
+  dropRequest(r, 'expired');
+  if (!r.declined) toProfile(to, { type: 'request_gone', requestId: r.id });
+}
+
+// ── Chats ────────────────────────────────────────────────────────────────────
+
+// Profile p closes its side of chat c. The partner keeps a read-only copy
+// until they close it too; the chat is forgotten once nobody has it open.
+function leaveChat(c, p, reason) {
+  c.open.delete(p.id);
+  p.chats.delete(c.id);
+  if (c.ai) {
+    if (c.bot) { send(c.bot, { type: 'partner_left' }); c.bot._aiChat = null; c.bot = null; }
+    chats.delete(c.id);
+    return;
+  }
+  const other = profiles.get(partnerId(c, p.id));
+  if (other && c.open.has(other.id)) toProfile(other, { type: 'chat_ended', chatId: c.id, reason });
+  if (c.open.size === 0) chats.delete(c.id);
+}
+
+// The bot ended the conversation (or disconnected); the human keeps their copy.
+function botLeft(bot) {
+  const c = bot._aiChat && chats.get(bot._aiChat);
+  bot._aiChat = null;
+  if (!c) return;
+  c.bot = null;
+  toProfile(profiles.get(c.a), { type: 'chat_ended', chatId: c.id, reason: 'ended' });
+}
+
+// ── Lifecycle ────────────────────────────────────────────────────────────────
+
+function deleteProfile(p, reason) {
+  if (!profiles.has(p.id)) return;
+  clearTimeout(p.graceTimer);
+  for (const rid of [...p.outgoing]) { const r = requests.get(rid); if (r) dropRequest(r, 'from_gone'); }
+  for (const rid of [...p.inbound])  { const r = requests.get(rid); if (r) dropRequest(r, 'to_gone'); }
+  for (const cid of [...p.chats])    { const c = chats.get(cid); if (c) leaveChat(c, p, 'logged_off'); }
+  for (const id of p.blocked)    profiles.get(id)?.blockedBy.delete(p.id);
+  for (const id of p.blockedBy)  profiles.get(id)?.blocked.delete(p.id);
+  for (const id of p.noAnswer)   profiles.get(id)?.noAnswerBy.delete(p.id);
+  for (const id of p.noAnswerBy) profiles.get(id)?.noAnswer.delete(p.id);
+  byName.delete(p.name.toLowerCase());
+  byToken.delete(p.resumeToken);
+  for (const t of p.interests) {
+    const s = byInterest.get(t);
+    if (s) { s.delete(p.id); if (s.size === 0) byInterest.delete(t); }
+  }
+  const n = (profilesPerIp.get(p.ip) || 1) - 1;
+  if (n <= 0) profilesPerIp.delete(p.ip); else profilesPerIp.set(p.ip, n);
+  profiles.delete(p.id);
+  if (p.ws) { send(p.ws, { type: 'logged_off', reason }); p.ws._profile = null; p.ws = null; }
+}
+
+// The socket dropped without a log off: keep the profile for the grace period
+function startGrace(p) {
+  p.ws = null;
+  if (RECONNECT_GRACE_MS === 0) return deleteProfile(p, 'timeout');
+  for (const cid of p.chats) {
+    const c = chats.get(cid);
+    if (c && !c.ai && c.open.size === 2) toProfile(profiles.get(partnerId(c, p.id)), { type: 'partner_reconnecting', chatId: c.id });
+  }
+  p.graceTimer = setTimeout(() => deleteProfile(p, 'timeout'), RECONNECT_GRACE_MS);
+}
+
+// Idle: warn at IDLE_WARNING_MS, log off at IDLE_LOGOFF_MS without user action
+const IDLE_CHECK_MS = Math.max(250, Math.min(15_000, Math.floor(IDLE_WARNING_MS / 4)));
+setInterval(() => {
+  const now = Date.now();
+  for (const p of profiles.values()) {
+    if (!p.ws) continue;
+    const idle = now - p.lastActiveAt;
+    if (idle >= IDLE_LOGOFF_MS) deleteProfile(p, 'idle');
+    else if (idle >= IDLE_WARNING_MS && !p.idleWarned) {
+      p.idleWarned = true;
+      toProfile(p, { type: 'idle_warning', secondsLeft: Math.ceil((IDLE_LOGOFF_MS - idle) / 1000) });
+    }
+  }
+}, IDLE_CHECK_MS).unref();
+
+// ── Live interest counts: rounded buckets, pushed only when they change ──────
+
+function topInterests(n) {
+  return [...byInterest].sort((a, b) => b[1].size - a[1].size || (a[0] < b[0] ? -1 : 1)).slice(0, n);
+}
+function sendCounts(p, top, force) {
+  const want = new Set([...p.interests, ...p.watch.interests, ...top]);
+  const buckets = {};
+  for (const t of want) buckets[t] = bucket(byInterest.get(t)?.size || 0);
+  const key = JSON.stringify([top, buckets]);
+  if (!force && key === p.watch.last) return;
+  p.watch.last = key;
+  toProfile(p, { type: 'counts', buckets, top });
+}
+setInterval(() => {
+  const top = topInterests(TOP_INTERESTS).map(([t]) => t);
+  for (const p of profiles.values()) if (p.ws && p.watch.on) sendCounts(p, top, false);
+}, COUNTS_TICK_MS).unref();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WebSocket server
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -434,16 +709,14 @@ wss.on('connection', (ws, req) => {
     console.log(`[bot] connected bots=${botSockets.size}`);
   }
 
-  ws.isAlive         = true;
-  ws._isBot          = isBot;
-  ws._ip             = isBot ? null : ip; // bots don't hold a per-IP slot
-  ws.keywords        = null;
-  ws.roomId          = null;
-  ws._closed         = false;
-  ws._connectedAt    = now;
-  ws._verified       = false;
-  ws._recentPartners = new Set();  // avoid re-matching the same pair on Next →
-  ws._joinedPoolAt   = 0;          // set when entering the waiting pool
+  ws.isAlive      = true;
+  ws._isBot       = isBot;
+  ws._ip          = isBot ? null : ip; // bots don't hold a per-IP slot
+  ws._closed      = false;
+  ws._connectedAt = now;
+  ws._verified    = false;
+  ws._profile     = null;   // profile id, humans
+  ws._aiChat      = null;   // chat id, bots
 
   ws.on('pong', () => { ws.isAlive = true; });
 
@@ -459,310 +732,372 @@ wss.on('connection', (ws, req) => {
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
 
-    // Bots may only announce readiness, chat and leave; humans can't do bot things.
-    if (ws._isBot  && (msg.type === 'join' || msg.type === 'join_ai')) return;
-    if (!ws._isBot && msg.type === 'bot_ready') return;
-
-    switch (msg.type) {
-
-      case 'bot_ready': {
-        // A bot offers itself for one new conversation, with a fresh key.
-        if (ws.roomId) return;
-        if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) {
-          send(ws, { type: 'error', code: 'invalid_key' });
-          return;
-        }
-        ws.pubKey = msg.pubKey;
-        idleBots.add(ws);
-        break;
-      }
-
-      case 'join_ai': {
-        // A waiting human explicitly chose to chat with an AI instead.
-        if (!ws._verified || ws.roomId) return;
-        if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) {
-          send(ws, { type: 'error', code: 'invalid_key' });
-          return;
-        }
-        const aiWait = joinWait(ws);
-        if (aiWait) {
-          send(ws, { type: 'error', code: 'slow_down', retryMs: aiWait });
-          return;
-        }
-        let bot = null;
-        for (const b of idleBots) { if (b.readyState === WS.OPEN) { bot = b; break; } }
-        if (!bot || rooms.size >= MAX_ROOMS) {
-          send(ws, { type: 'error', code: 'ai_unavailable' });
-          return;
-        }
-
-        // The bot gets the human's keywords as a conversation topic
-        const topics = (ws.keywords || []).filter(k => k !== '__random__');
-        leaveSession(ws); // out of the keyword pools
-        ws.pubKey = msg.pubKey;
-
-        idleBots.delete(bot);
-        const roomId = randomId();
-        rooms.set(roomId, { a: bot, b: ws, ai: true });
-        bot.roomId = roomId;
-        ws.roomId  = roomId;
-
-        send(ws,  { type: 'matched', ai: true, matchedKeywords: [], partnerPubKey: bot.pubKey });
-        send(bot, { type: 'matched', ai: true, keywords: topics, partnerPubKey: ws.pubKey });
-        console.log(`[match] ai room=${roomId} rooms=${rooms.size}`);
-        break;
-      }
-
-      case 'join': {
-
-        // Already in a conversation — the client must send 'leave' first.
-        // Without this, a late join (e.g. the random-pool fallback racing a
-        // match) would put one socket into two rooms.
-        if (ws.roomId) return;
-
-        // ── Proof-of-work verification ───────────────────────────────────
-        // PoW is the primary bot defence. A timing check is redundant —
-        // any client that solved SHA-256 with difficulty 4 has already
-        // spent ~50-200ms of real CPU time proving it is not a trivial bot.
-        if (!ws._verified) {
-          const { token, nonce } = msg;
-          const challenge = token && challenges.get(token);
-          if (!challenge || Date.now() > challenge.expiresAt) {
-            send(ws, { type: 'error', code: 'challenge_expired' });
-            return;
-          }
-          // Reject if the challenge was issued to a different IP
-          if (challenge.ip !== ws._ip) {
-            logAbuse('pow_ip_mismatch', ws._ip);
-            ws.close(1008, 'Invalid challenge');
-            return;
-          }
-          const hashBuf = crypto.createHash('sha256')
-            .update(challenge.prefix + String(nonce))
-            .digest();
-          const fullBytes = POW_DIFFICULTY >> 1;
-          const halfByte  = POW_DIFFICULTY & 1;
-          let powOk = true;
-          for (let i = 0; i < fullBytes; i++) {
-            if (hashBuf[i] !== 0) { powOk = false; break; }
-          }
-          if (powOk && halfByte && (hashBuf[fullBytes] >> 4) !== 0) powOk = false;
-          if (!powOk) {
-            logAbuse('pow_fail', ws._ip);
-            ws.close(1008, 'Invalid challenge');
-            return;
-          }
-          challenges.delete(token);
-          ws._verified = true;
-        }
-
-        // ── Sanitise keywords ────────────────────────────────────────────
-        const keywords = (Array.isArray(msg.keywords) ? msg.keywords : [])
-          .map(k => (typeof k === 'string' ? k : '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20))
-          .filter(Boolean)
-          .slice(0, MAX_KEYWORD_POOLS);
-
-        if (keywords.length === 0) return;
-
-        // ── Honeypot keyword ─────────────────────────────────────────────
-        if (keywords.includes(HONEYPOT_KEYWORD)) {
-          logAbuse('honeypot', ws._ip);
-          banIP(ws._ip);
-          ws.close(1008, 'Blocked');
-          return;
-        }
-
-        // ── Memory ceiling ───────────────────────────────────────────────
-        if (waitingPool.size >= MAX_WAITING_POOL_KEYS || rooms.size >= MAX_ROOMS) {
-          send(ws, { type: 'error', code: 'server_busy' });
-          return;
-        }
-
-        // ── Pacing: after PoW, so a retry needs no fresh token ───────────
-        const wait = joinWait(ws);
-        if (wait) {
-          send(ws, { type: 'error', code: 'slow_down', retryMs: wait });
-          return;
-        }
-
-        // ── Clean up any previous pool membership (critical for Next →) ──
-        // Without this, the ws stays in the old pool from the previous
-        // session and either matches with itself or blocks future matches.
-        // A re-join while still waiting (random-pool fallback) keeps the
-        // original wait time, so the client doesn't lose its place in line.
-        const waitingSince = ws.keywords ? ws._joinedPoolAt : 0;
-        if (ws.keywords) {
-          ws.keywords.forEach(kw => {
-            const p = waitingPool.get(kw);
-            if (p) { p.delete(ws); if (p.size === 0) waitingPool.delete(kw); }
-          });
-          ws.keywords = null;
-        }
-
-        // A malformed key would make the partner's key derivation throw
-        if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) {
-          send(ws, { type: 'error', code: 'invalid_key' });
-          return;
-        }
-        ws.pubKey = msg.pubKey;
-
-        // ── Matching algorithm ───────────────────────────────────────────
-        // Scan ALL keyword pools and score every candidate by how many
-        // keywords they share with this client. Among the highest-overlap
-        // candidates, pick the one who has been waiting the longest.
-        // Recent partners (from Next →) are excluded to avoid re-matching.
-
-        const candidateScores = new Map(); // other_ws → { count, keywords[] }
-
-        for (const keyword of keywords) {
-          const pool = waitingPool.get(keyword);
-          if (!pool) continue;
-
-          // Prune disconnected entries on the fly
-          for (const other of pool) {
-            if (other.readyState !== WS.OPEN) pool.delete(other);
-          }
-
-          for (const other of pool) {
-            if (other === ws) continue;
-            if (ws._recentPartners.has(other)) continue;
-            let score = candidateScores.get(other);
-            if (!score) { score = { count: 0, keywords: [] }; candidateScores.set(other, score); }
-            score.count++;
-            score.keywords.push(keyword);
-          }
-        }
-
-        let matched = false;
-
-        if (candidateScores.size > 0) {
-          // Find the maximum overlap count
-          let maxCount = 0;
-          for (const [, score] of candidateScores) {
-            if (score.count > maxCount) maxCount = score.count;
-          }
-
-          // Among max-overlap candidates, pick the one waiting longest (fairness)
-          let partner     = null;
-          let partnerInfo = null;
-          let oldestJoin  = Infinity;
-
-          for (const [candidate, score] of candidateScores) {
-            if (score.count !== maxCount) continue;
-            const joinTime = candidate._joinedPoolAt || 0;
-            if (joinTime < oldestJoin) {
-              oldestJoin  = joinTime;
-              partner     = candidate;
-              partnerInfo = score;
-            }
-          }
-
-          if (partner) {
-            // Remove partner from ALL its pools atomically before notifying
-            if (partner.keywords) {
-              partner.keywords.forEach(kw => {
-                const p = waitingPool.get(kw);
-                if (p) { p.delete(partner); if (p.size === 0) waitingPool.delete(kw); }
-              });
-              partner.keywords = null;
-            }
-
-            const roomId = randomId();
-            rooms.set(roomId, { a: partner, b: ws });
-            partner.roomId = roomId;
-            ws.roomId      = roomId;
-            ws.keywords    = null;
-
-            // Record each other as recent partners so Next → doesn't re-match them
-            ws._recentPartners.add(partner);
-            partner._recentPartners.add(ws);
-            // Cap the sets to avoid unbounded growth over many Next → cycles
-            if (ws._recentPartners.size > MAX_RECENT_PARTNERS) {
-              const first = ws._recentPartners.values().next().value;
-              ws._recentPartners.delete(first);
-            }
-            if (partner._recentPartners.size > MAX_RECENT_PARTNERS) {
-              const first = partner._recentPartners.values().next().value;
-              partner._recentPartners.delete(first);
-            }
-
-            // Send all matched keywords (filter out __random__ for display)
-            const matchedKeywords = partnerInfo.keywords.filter(k => k !== '__random__');
-
-            send(partner, { type: 'matched', matchedKeywords, partnerPubKey: ws.pubKey });
-            send(ws,      { type: 'matched', matchedKeywords, partnerPubKey: partner.pubKey });
-
-            console.log(`[match] overlap=${partnerInfo.count} room=${roomId} rooms=${rooms.size}`);
-            matched = true;
-          }
-        }
-
-        if (!matched) {
-          ws.keywords      = keywords;
-          ws._joinedPoolAt = waitingSince || Date.now();
-          keywords.forEach(kw => {
-            const pool = waitingPool.get(kw) || new Set();
-            pool.add(ws);
-            waitingPool.set(kw, pool);
-          });
-          send(ws, { type: 'waiting', keywords });
-        }
-        break;
-      }
-
-      case 'message': {
-        if (!ws.roomId) return;
-        const room = rooms.get(ws.roomId);
-        if (!room) return;
-        const other = room.a === ws ? room.b : room.a;
-
-        // Only relay E2EE frames — plaintext relay intentionally absent.
-        // Oversized or malformed frames are rejected, never truncated: a
-        // truncated ciphertext just fails authentication on the other side.
-        const { ciphertext, nonce } = msg;
-        if (typeof ciphertext !== 'string' || typeof nonce !== 'string' ||
-            ciphertext.length > MAX_CIPHERTEXT_B64 ||
-            !CIPHERTEXT_RE.test(ciphertext) || !NONCE_RE.test(nonce)) {
-          send(ws, { type: 'error', code: 'message_rejected' });
-          return;
-        }
-
-        if (takeToken(ws, '_msgBucket', MSG_BURST, MSG_REFILL_MS)) {
-          send(ws, { type: 'error', code: 'rate_limited' });
-          return;
-        }
-
-        send(other, { type: 'message', ciphertext, nonce });
-        break;
-      }
-
-      case 'typing': {
-        if (!ws.roomId) return;
-        const room = rooms.get(ws.roomId);
-        if (!room) return;
-        const other = room.a === ws ? room.b : room.a;
-        send(other, { type: 'typing' });
-        break;
-      }
-
-      case 'leave': {
-        leaveSession(ws);
-        break;
-      }
-
-      // Unknown types are silently ignored
-    }
+    if (ws._isBot) handleBotFrame(ws, msg);
+    else           handleHumanFrame(ws, msg);
   });
 
-  ws.on('close', () => handleClose(ws));
+  ws.on('close', code => handleClose(ws, code));
 });
 
+// Bots keep the protocol they had before profiles: bot_ready, then 'matched',
+// 'message', 'typing', 'leave' / 'partner_left' for one conversation at a time.
+function handleBotFrame(bot, msg) {
+  switch (msg.type) {
+    case 'bot_ready': {
+      // A bot offers itself for one new conversation, with a fresh key.
+      if (bot._aiChat) return;
+      if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) {
+        send(bot, { type: 'error', code: 'invalid_key' });
+        return;
+      }
+      bot.pubKey = msg.pubKey;
+      idleBots.add(bot);
+      break;
+    }
+    case 'message': {
+      const c = bot._aiChat && chats.get(bot._aiChat);
+      if (!c || !validCiphertext(msg, MAX_CIPHERTEXT_B64)) return;
+      toProfile(profiles.get(c.a), { type: 'chat_message', chatId: c.id, ciphertext: msg.ciphertext, nonce: msg.nonce });
+      break;
+    }
+    case 'typing': {
+      const c = bot._aiChat && chats.get(bot._aiChat);
+      if (c) toProfile(profiles.get(c.a), { type: 'chat_typing', chatId: c.id });
+      break;
+    }
+    case 'leave':
+      idleBots.delete(bot);
+      botLeft(bot);
+      break;
+  }
+}
+
+function validCiphertext({ ciphertext, nonce }, max) {
+  return typeof ciphertext === 'string' && typeof nonce === 'string' &&
+    ciphertext.length <= max && CIPHERTEXT_RE.test(ciphertext) && NONCE_RE.test(nonce);
+}
+
+function verifyPow(ws, { token, nonce }) {
+  const challenge = typeof token === 'string' && challenges.get(token);
+  if (!challenge || Date.now() > challenge.expiresAt) {
+    send(ws, { type: 'error', code: 'challenge_expired' });
+    return false;
+  }
+  // Reject if the challenge was issued to a different IP
+  if (challenge.ip !== ws._ip) {
+    logAbuse('pow_ip_mismatch', ws._ip);
+    ws.close(1008, 'Invalid challenge');
+    return false;
+  }
+  const hashBuf = crypto.createHash('sha256').update(challenge.prefix + String(nonce)).digest();
+  const fullBytes = POW_DIFFICULTY >> 1;
+  const halfByte  = POW_DIFFICULTY & 1;
+  let powOk = true;
+  for (let i = 0; i < fullBytes; i++) {
+    if (hashBuf[i] !== 0) { powOk = false; break; }
+  }
+  if (powOk && halfByte && (hashBuf[fullBytes] >> 4) !== 0) powOk = false;
+  if (!powOk) {
+    logAbuse('pow_fail', ws._ip);
+    ws.close(1008, 'Invalid challenge');
+    return false;
+  }
+  challenges.delete(token);
+  ws._verified = true;
+  return true;
+}
+
+// Frames that don't count as the person doing something (for the idle timer)
+const PASSIVE_FRAMES = new Set(['chat_typing', 'counts_watch']);
+
+function handleHumanFrame(ws, msg) {
+  const err = (code, extra) => send(ws, { type: 'error', code, ...extra });
+
+  // ── Before a profile exists ────────────────────────────────────────────────
+  if (msg.type === 'profile_create') {
+    if (ws._profile) return;
+    if (!ws._verified && !verifyPow(ws, msg)) return;
+
+    // A hidden form field only bots fill in; the client sends it as an interest
+    const rawInterests = Array.isArray(msg.interests) ? msg.interests.slice(0, 20) : [];
+    if (rawInterests.includes(HONEYPOT_KEYWORD)) {
+      logAbuse('honeypot', ws._ip);
+      banIP(ws._ip);
+      ws.close(1008, 'Blocked');
+      return;
+    }
+    const name = typeof msg.name === 'string' ? msg.name.trim() : '';
+    if (!NAME_RE.test(name)) return err('name_invalid');
+    if (containsAny(name, reservedNames) || containsAny(name, blockedWords)) return err('name_reserved');
+    if (byName.has(name.toLowerCase())) return err('name_taken');
+    const gender = typeof msg.gender === 'string' ? msg.gender : '';
+    if (!GENDERS.has(gender)) return err('gender_invalid');
+    const interests = [...new Set(rawInterests.map(cleanInterest).filter(t => t.length >= 2))];
+    if (interests.length === 0 || interests.length > MAX_INTERESTS || interests.some(t => containsAny(t, blockedWords))) {
+      return err('interests_invalid');
+    }
+    if (typeof msg.pubKey !== 'string' || !PUBKEY_RE.test(msg.pubKey)) return err('invalid_key');
+    if ((profilesPerIp.get(ws._ip) || 0) >= MAX_PROFILES_PER_IP) return err('too_many_profiles');
+    if (profiles.size >= MAX_PROFILES) return err('server_busy');
+    // Paced after validation, so fixing a typo in the form costs nothing
+    const wait = joinWait(ws);
+    if (wait) return err('slow_down', { retryMs: wait });
+
+    const p = createProfile(ws, { name, gender, interests, pubKey: msg.pubKey });
+    send(ws, { type: 'profile_ok', ...summary(p), resumeToken: p.resumeToken });
+    return;
+  }
+
+  if (msg.type === 'resume') {
+    if (ws._profile) return;
+    const p = typeof msg.resumeToken === 'string' && profiles.get(byToken.get(msg.resumeToken));
+    if (!p) return err('resume_failed');
+    // Newest tab wins: the old socket is told and closed
+    if (p.ws && p.ws !== ws) {
+      send(p.ws, { type: 'replaced' });
+      p.ws._profile = null;
+      p.ws.close(4001, 'Continued in another tab');
+    }
+    const wasAway = !p.ws;
+    byToken.delete(p.resumeToken);
+    p.resumeToken = newId() + newId();
+    byToken.set(p.resumeToken, p.id);
+    if (p.ip !== ws._ip) {
+      const n = (profilesPerIp.get(p.ip) || 1) - 1;
+      if (n <= 0) profilesPerIp.delete(p.ip); else profilesPerIp.set(p.ip, n);
+      p.ip = ws._ip;
+      profilesPerIp.set(p.ip, (profilesPerIp.get(p.ip) || 0) + 1);
+    }
+    ws._verified = true;
+    attach(p, ws);
+    p.watch.last = '';
+    send(ws, { type: 'profile_ok', ...summary(p), resumeToken: p.resumeToken });
+    send(ws, stateSnapshot(p));
+    if (wasAway) {
+      for (const cid of p.chats) {
+        const c = chats.get(cid);
+        if (c && !c.ai && c.open.size === 2) toProfile(profiles.get(partnerId(c, p.id)), { type: 'partner_back', chatId: c.id });
+      }
+    }
+    return;
+  }
+
+  const me = ws._profile && profiles.get(ws._profile);
+  if (!me || me.ws !== ws) return;
+  if (!PASSIVE_FRAMES.has(msg.type)) { me.lastActiveAt = Date.now(); me.idleWarned = false; }
+
+  switch (msg.type) {
+
+    case 'still_here': break; // the activity update above is all it does
+
+    case 'counts_watch': {
+      me.watch.on = msg.on !== false;
+      me.watch.interests = (Array.isArray(msg.interests) ? msg.interests : [])
+        .slice(0, MAX_WATCHED_INTERESTS).map(cleanInterest).filter(t => t.length >= 2);
+      if (me.watch.on) sendCounts(me, topInterests(TOP_INTERESTS).map(([t]) => t), true);
+      break;
+    }
+
+    case 'interests_all': {
+      if (takeToken(ws, '_searchBucket', SEARCH_BURST, SEARCH_REFILL_MS)) return err('rate_limited');
+      send(ws, { type: 'interests_all', list: topInterests(MAX_ALL_INTERESTS).map(([t, s]) => [t, bucket(s.size)]) });
+      break;
+    }
+
+    case 'search': {
+      const interest = cleanInterest(msg.interest);
+      if (interest.length < 2) return;
+      const wait = takeToken(ws, '_searchBucket', SEARCH_BURST, SEARCH_REFILL_MS);
+      if (wait) return err('rate_limited', { retryMs: wait });
+      const ids = [...(byInterest.get(interest) || [])].filter(id => {
+        if (id === me.id) return false;
+        const o = profiles.get(id);
+        return o && !blockedBetween(me, o);
+      });
+      // Random sample, so the first people in a list aren't the ones everyone asks
+      for (let i = 0; i < Math.min(SEARCH_RESULTS, ids.length); i++) {
+        const j = i + crypto.randomInt(ids.length - i);
+        [ids[i], ids[j]] = [ids[j], ids[i]];
+      }
+      const people = ids.slice(0, SEARCH_RESULTS).map(id => {
+        const o = profiles.get(id);
+        return { ...summary(o), askedBefore: me.noAnswer.has(id) };
+      });
+      send(ws, { type: 'results', interest, bucket: bucket(ids.length), people });
+      break;
+    }
+
+    case 'request_send': {
+      const to = typeof msg.to === 'string' && profiles.get(msg.to);
+      // Blocked looks exactly like offline, so a block can't be detected
+      if (!to || to === me || blockedBetween(me, to)) return err('offline', { to: msg.to });
+      if (!validCiphertext(msg, MAX_REQUEST_CT_B64)) return err('message_rejected', { to: to.id });
+      if (chatBetween(me, to)) return err('already_chatting', { to: to.id });
+      if (pendingBetween(me, to)) return err('already_pending', { to: to.id });
+      if (me.noAnswer.has(to.id)) return err('asked_before', { to: to.id });
+      if (!to.accepting) return err('not_accepting', { to: to.id });
+      if (me.outgoing.size >= MAX_OUTGOING_REQUESTS) return err('outgoing_full', { to: to.id });
+      if (activeChats(me) >= MAX_ACTIVE_CHATS) return err('chats_full', { to: to.id });
+      if (openIncoming(to) >= MAX_INCOMING_REQUESTS) return err('busy', { to: to.id });
+      const wait = takeToken(ws, '_requestBucket', REQUEST_BURST, REQUEST_REFILL_MS);
+      if (wait) return err('rate_limited', { to: to.id, retryMs: wait });
+      if (requests.size >= MAX_REQUESTS) return err('server_busy', { to: to.id });
+
+      const now = Date.now();
+      const r = { id: newId(), from: me.id, to: to.id, ciphertext: msg.ciphertext, nonce: msg.nonce,
+                  createdAt: now, expiresAt: now + REQUEST_TTL_MS, declined: false, timer: null };
+      r.timer = setTimeout(() => expireRequest(r), REQUEST_TTL_MS);
+      requests.set(r.id, r);
+      me.outgoing.add(r.id);
+      to.inbound.add(r.id);
+      // expiresIn, not a timestamp: the browser's clock may be off
+      send(ws, { type: 'request_sent', requestId: r.id, to: to.id, expiresIn: REQUEST_TTL_MS });
+      toProfile(to, { type: 'request_in', requestId: r.id, from: summary(me), ciphertext: r.ciphertext, nonce: r.nonce, expiresIn: REQUEST_TTL_MS });
+      break;
+    }
+
+    case 'request_withdraw': {
+      const r = typeof msg.requestId === 'string' && requests.get(msg.requestId);
+      if (r && r.from === me.id) dropRequest(r, 'withdrawn');
+      break;
+    }
+
+    case 'request_answer': {
+      const r = typeof msg.requestId === 'string' && requests.get(msg.requestId);
+      if (!r || r.to !== me.id || r.declined) return;
+      const from = profiles.get(r.from);
+      if (msg.accept !== true) {
+        // Silent: the request just disappears here; the sender keeps waiting
+        // until it expires, exactly as if nobody had answered.
+        r.declined = true;
+        me.inbound.delete(r.id);
+        return;
+      }
+      if (!from) return dropRequest(r, 'from_gone');
+      if (activeChats(me) >= MAX_ACTIVE_CHATS) return err('chats_full');
+      if (chats.size >= MAX_CHATS) return err('server_busy');
+      dropRequest(r, 'accepted');
+      const c = { id: newId(), a: from.id, b: me.id, ai: false, bot: null, open: new Set([from.id, me.id]) };
+      chats.set(c.id, c);
+      from.chats.add(c.id);
+      me.chats.add(c.id);
+      toProfile(from, { type: 'chat_open', chatId: c.id, requestId: r.id, partner: summary(me) });
+      send(ws,        { type: 'chat_open', chatId: c.id, requestId: r.id, partner: summary(from) });
+      break;
+    }
+
+    case 'set_accepting':
+      me.accepting = msg.on === true;
+      send(ws, { type: 'accepting', on: me.accepting });
+      break;
+
+    case 'chat_message': {
+      const c = typeof msg.chatId === 'string' && chats.get(msg.chatId);
+      if (!c || !c.open.has(me.id)) return;
+      // Only relay E2EE frames — plaintext relay intentionally absent.
+      // Oversized or malformed frames are rejected, never truncated.
+      if (!validCiphertext(msg, MAX_CIPHERTEXT_B64)) return err('message_rejected', { chatId: c.id });
+      if (!isActiveChat(c)) return err('chat_closed', { chatId: c.id });
+      if (takeToken(ws, '_msgBucket', MSG_BURST, MSG_REFILL_MS)) return err('rate_limited', { chatId: c.id });
+      if (c.ai) { send(c.bot, { type: 'message', ciphertext: msg.ciphertext, nonce: msg.nonce }); break; }
+      const other = profiles.get(partnerId(c, me.id));
+      if (!other?.ws) return err('partner_away', { chatId: c.id });
+      send(other.ws, { type: 'chat_message', chatId: c.id, ciphertext: msg.ciphertext, nonce: msg.nonce });
+      break;
+    }
+
+    case 'chat_typing': {
+      const c = typeof msg.chatId === 'string' && chats.get(msg.chatId);
+      if (!c || !c.open.has(me.id) || !isActiveChat(c)) return;
+      if (c.ai) send(c.bot, { type: 'typing' });
+      else toProfile(profiles.get(partnerId(c, me.id)), { type: 'chat_typing', chatId: c.id });
+      break;
+    }
+
+    case 'chat_end': {
+      const c = typeof msg.chatId === 'string' && chats.get(msg.chatId);
+      if (c && c.open.has(me.id)) leaveChat(c, me, 'ended');
+      break;
+    }
+
+    case 'block': {
+      const other = typeof msg.profileId === 'string' && profiles.get(msg.profileId);
+      if (!other || other === me || me.blocked.has(other.id)) return;
+      me.blocked.add(other.id);
+      other.blockedBy.add(me.id);
+      for (const rid of [...me.outgoing]) {
+        const r = requests.get(rid);
+        if (r?.to === other.id) dropRequest(r, 'withdrawn');
+      }
+      for (const rid of [...other.outgoing]) {
+        const r = requests.get(rid);
+        // Their request to me: treated as declined, so it looks like no answer
+        if (r?.to === me.id && !r.declined) { r.declined = true; me.inbound.delete(r.id); }
+      }
+      for (const cid of [...me.chats]) {
+        const c = chats.get(cid);
+        if (c && !c.ai && partnerId(c, me.id) === other.id) leaveChat(c, me, 'ended');
+      }
+      break;
+    }
+
+    case 'report': {
+      if (rateExceeded(reportThrottle, ws._ip, MAX_REPORTS_PER_IP, 3_600_000)) return err('rate_limited');
+      const reason = typeof msg.reason === 'string' && VALID_REASONS.has(msg.reason) ? msg.reason : null;
+      if (!reason) return err('invalid_reason');
+      const subject = typeof msg.profileId === 'string' && profiles.get(msg.profileId);
+      const fallbackName = typeof msg.name === 'string' && NAME_RE.test(msg.name) ? msg.name : '';
+      const clean = (s, n) => typeof s === 'string' ? s.replace(/[<>]/g, '').trim().slice(0, n) : '';
+      const entry = {
+        ts: new Date().toISOString(),
+        reason,
+        details: clean(msg.details, 500),
+        reported: subject ? subject.name : fallbackName,
+        // deliberately: no IP, no reporter identity
+      };
+      const requestText = clean(msg.requestText, MAX_REQUEST_CHARS);
+      if (requestText) entry.requestTextUnverified = requestText; // provided by the reporter; the server can't check it
+      fs.appendFile(REPORTS_LOG, JSON.stringify(entry) + '\n', e => {
+        if (e) console.error('[report] failed to write log:', e.message);
+      });
+      send(ws, { type: 'report_ok' });
+      break;
+    }
+
+    case 'ai_start': {
+      if (activeChats(me) >= MAX_ACTIVE_CHATS) return err('chats_full');
+      for (const cid of me.chats) if (chats.get(cid)?.ai) return err('ai_already_open');
+      const wait = joinWait(ws);
+      if (wait) return err('slow_down', { retryMs: wait });
+      let bot = null;
+      for (const b of idleBots) { if (b.readyState === WS.OPEN) { bot = b; break; } }
+      if (!bot || chats.size >= MAX_CHATS) return err('ai_unavailable');
+      idleBots.delete(bot);
+      const c = { id: newId(), a: me.id, b: null, ai: true, bot, open: new Set([me.id]) };
+      chats.set(c.id, c);
+      me.chats.add(c.id);
+      bot._aiChat = c.id;
+      // The bot gets the person's interests as conversation topics
+      send(bot, { type: 'matched', ai: true, keywords: me.interests, partnerPubKey: me.pubKey });
+      send(ws,  { type: 'chat_open', chatId: c.id, ai: true, partner: { name: 'Emberline AI', pubKey: bot.pubKey } });
+      console.log(`[ai] chat opened chats=${chats.size}`);
+      break;
+    }
+
+    case 'logoff':
+      deleteProfile(me, 'logoff');
+      break;
+
+    // Unknown types are silently ignored
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Cleanup on leave / close / error
+// Cleanup on close / error
 // ─────────────────────────────────────────────────────────────────────────────
-// A 'leave' message ends the current session (pool membership or room) but
-// keeps the socket open for Next →. Only an actual socket close releases the
-// per-IP connection slot, so an open socket always counts against the cap.
+// Only an actual socket close releases the per-IP connection slot, so an open
+// socket always counts against the cap. A profile outlives an unclean close
+// by RECONNECT_GRACE_MS; a log off (sent by the page on unload) deletes it now.
 
 function handleClose(ws) {
   if (ws._closed) return;
@@ -771,6 +1106,7 @@ function handleClose(ws) {
   if (ws._isBot) {
     botSockets.delete(ws);
     idleBots.delete(ws);
+    botLeft(ws);
     console.log(`[bot] disconnected bots=${botSockets.size}`);
   }
 
@@ -780,37 +1116,9 @@ function handleClose(ws) {
     else        ipConnections.set(ws._ip, n);
   }
 
-  leaveSession(ws);
-  // Otherwise every closed socket keeps its past partners alive, and they
-  // keep theirs: memory would grow with every conversation since startup.
-  ws._recentPartners?.clear();
-}
-
-function leaveSession(ws) {
-  // A bot that leaves is no longer available until it sends bot_ready again
-  idleBots.delete(ws);
-
-  // Remove from any waiting pool
-  if (ws.keywords) {
-    ws.keywords.forEach(kw => {
-      const pool = waitingPool.get(kw);
-      if (pool) { pool.delete(ws); if (pool.size === 0) waitingPool.delete(kw); }
-    });
-    ws.keywords = null;
-  }
-
-  // Notify partner and clean room
-  if (ws.roomId) {
-    const room = rooms.get(ws.roomId);
-    if (room) {
-      const other = room.a === ws ? room.b : room.a;
-      other.roomId = null; // room is gone for both sides; lets the partner rejoin
-      send(other, { type: 'partner_left' });
-    }
-    rooms.delete(ws.roomId);
-    ws.roomId = null;
-    console.log(`[leave] room cleaned  rooms=${rooms.size}`);
-  }
+  const p = ws._profile && profiles.get(ws._profile);
+  ws._profile = null;
+  if (p && p.ws === ws) startGrace(p);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -857,8 +1165,8 @@ app.get('/challenge', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.get('/count', (req, res) => {
-  // Bots are not people — they never count towards the "embers" shown.
-  res.json({ count: wss.clients.size - botSockets.size, ai: idleBots.size > 0 });
+  // People online with a profile; bots are never counted.
+  res.json({ count: profiles.size, ai: idleBots.size > 0 });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -905,8 +1213,8 @@ app.post('/report', (req, res) => {
 // Effective dates — update manually when the corresponding policy changes.
 // Hardcoding avoids the bug where `new Date()` made the "effective date"
 // slide forward every time someone loaded the page.
-const POLICY_EFFECTIVE_DATE = '26 September 2026';
-const TERMS_EFFECTIVE_DATE  = '24 September 2026';
+const POLICY_EFFECTIVE_DATE = '27 September 2026';
+const TERMS_EFFECTIVE_DATE  = '27 September 2026';
 
 const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <html lang="en">
@@ -929,25 +1237,33 @@ const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <body>
 <h1>Privacy Policy</h1>
 <p class="date">Effective date: ${POLICY_EFFECTIVE_DATE} &nbsp;·&nbsp; Jurisdiction: Switzerland</p>
-<p>Emberline is an anonymous, ephemeral chat platform. This policy describes what data we collect, what we do not collect, and your rights under Swiss law (nFADP).</p>
+<p>Emberline is an ephemeral chat platform with temporary profiles. This policy describes what data we collect, what we do not collect, and your rights under Swiss law (nFADP).</p>
 <h2>What we do not collect</h2>
-<p>We do not collect names, email addresses, phone numbers, or any other identifying information. We do not require registration. We do not store chat messages — messages are relayed in real time using end-to-end encryption and are never written to disk. We have no ability to retrieve or reconstruct past conversations.</p>
-<h2>What we do collect</h2>
-<p>When a user submits an abuse report, we record the report timestamp, the reason category, and — only if the reporter chooses to write them — up to 500 characters of free-text details. No chat messages are attached, and no IP address or user identity is recorded with the report. Please do not include personal information in the details. Reports are retained for a maximum of 90 days.</p>
+<p>We do not collect email addresses, phone numbers, real names, or any other identifying information. There is no registration and no account. We do not store chat messages — messages are relayed in real time using end-to-end encryption and are never written to disk. We have no ability to retrieve or reconstruct past conversations.</p>
+<h2>Your profile</h2>
+<p>To go online you create a temporary profile: a username, optionally a gender, and up to ten interests. Your profile is visible to anyone who is online at the same time and searches for one of your interests. It is held only in the server's memory, never written to disk, and deleted when you log off, when you close or reload the page, after 30 minutes without activity, 5 minutes after your connection drops, or when the server restarts.</p>
+<p>Other people can see, remember or copy what your profile shows while you are online; we cannot delete what they saw. Gender is optional. It, and your interests, can reveal sensitive information about you (for example that you are transgender, or your religion, health or orientation). Only add what you are comfortable showing to strangers, and nothing that identifies you.</p>
+<p>The server refuses usernames containing certain reserved words (such as "admin" or "emberline") and may refuse words on a block list in usernames and interests. These checks run in memory when you create a profile; nothing is logged.</p>
+<h2>Requests and chats</h2>
+<p>Nobody can write to you until you accept their request. A request carries a short message, which is end-to-end encrypted like chat messages: the server holds it, encrypted, for up to 10 minutes until it is accepted, declined or expires, and cannot read it. A declined request looks to the sender exactly like one that wasn't answered.</p>
+<p>For the rest of your session the server also keeps, in memory: whether you accept requests, who you blocked, and who did not answer your requests (you can't ask them again that session). All of it is deleted with your profile.</p>
+<p>When a chat ends, it is removed from your list; the other person keeps their copy on their screen until they close it.</p>
+<h2>Reports</h2>
+<p>When you report someone, we record the report timestamp, the reason category, the reported person's username, and — only if you choose to write it — up to 500 characters of free-text details. If you choose to attach the request message that person sent you, it is recorded too, marked as unverified: because of the encryption, we cannot check that it is what they actually sent. No chat messages are attached, and no IP address or information about you is recorded with the report. Please do not include personal information in the details. Reports are retained for a maximum of 90 days.</p>
 <h2>IP addresses</h2>
-<p>We do not log IP addresses in association with chat content, reports, keywords, or any durable user record. An IP-based abuse defense runs at the connection layer: when a client trips a rate limit, floods the server with messages, fails a proof-of-work check, hits a honeypot, or tries to connect from another website, an entry is written to an abuse log containing only a timestamp, the triggered rule, and the source IP. The same log records when an IP is banned. Separately, to enforce rate limits, the server keeps IP addresses in memory while you are connected and for up to two hours afterwards (24 hours for a banned IP); this is never written to disk. This log feeds a ban system that temporarily blocks repeat offenders and is rotated after 90 days. It is never cross-referenced against reports, conversations, or keywords — and cannot be, because none of those are stored. This is the minimum defense a fully anonymous service requires to remain functional.</p>
+<p>We do not log IP addresses in association with chat content, profiles, reports, or any durable user record. An IP-based abuse defense runs at the connection layer: when a client trips a rate limit, floods the server with messages, fails a proof-of-work check, hits a honeypot, or tries to connect from another website, an entry is written to an abuse log containing only a timestamp, the triggered rule, and the source IP. The same log records when an IP is banned. Separately, to enforce rate limits and the limit of five profiles per network at a time, the server keeps IP addresses in memory while you are connected and for up to two hours afterwards (24 hours for a banned IP); this is never written to disk. The abuse log feeds a ban system that temporarily blocks repeat offenders and is rotated after 90 days. It is never cross-referenced against reports, profiles, or conversations — and cannot be, because none of those are stored. This is the minimum defense a fully anonymous service requires to remain functional.</p>
+<h2>Hosting</h2>
+<p>Emberline is reached through a virtual server we rent from a hosting provider in Switzerland. It terminates the HTTPS connection and forwards the traffic through an encrypted tunnel to the server that runs Emberline, also in Switzerland. Because it sits in the connection path, the provider's infrastructure necessarily handles your IP address and the traffic passing through — for chat messages and requests, only end-to-end encrypted data. Access logging is disabled on this server. The provider only supplies the infrastructure; we share no data with it for any other purpose. Both servers are located in Switzerland.</p>
 <h2>End-to-end encryption</h2>
-<p>All messages are encrypted on your device using the NaCl box construction (Curve25519 + XSalsa20 + Poly1305). Only the two participants can decrypt messages. The server relays encrypted data it cannot read. In an optional AI chat, the AI is the other participant (see below).</p>
-<h2>Optional AI chat</h2>
-<p>If no one matches your keywords right away, the waiting screen may offer to let you chat with an AI instead. This only happens if you click that button, and an AI chat is labeled as such for its entire duration. The AI is a language model running on hardware operated by Emberline. It is the other participant in the conversation, so to reply it decrypts your messages and receives the keywords you entered. AI conversations are held in memory only while the chat lasts; they are not stored, logged, or used to train models. The AI can be wrong or say strange things — do not rely on it for advice, and do not share personal information with it.</p>
-<h2>Keywords</h2>
-<p>Keywords are held temporarily in server memory during matching and discarded immediately after a match is made or the session ends. If you choose an AI chat, your keywords are passed to the AI as conversation topics and discarded when the chat ends.</p>
+<p>Requests and chat messages are encrypted on your device using the NaCl box construction (Curve25519 + XSalsa20 + Poly1305). Only the two participants can decrypt them. The server relays encrypted data it cannot read. In an AI chat, the AI is the other participant (see below).</p>
+<h2>AI chat</h2>
+<p>You can choose to chat with an AI instead of a person. This only happens if you start it, and an AI chat is labeled as such for its entire duration. The AI is a language model running on hardware operated by Emberline. It is the other participant in the conversation, so to reply it decrypts your messages and receives your interests as conversation topics. AI conversations are held in memory only while the chat lasts; they are not stored, logged, or used to train models. The AI can be wrong or say strange things — do not rely on it for advice, and do not share personal information with it.</p>
 <h2>Cookies, tracking, and storage</h2>
-<p>We use no cookies, no analytics, no tracking pixels, and no third-party services. We do not use localStorage, sessionStorage, or any other form of persistent client-side storage. All fonts and cryptography libraries are self-hosted — no external requests are made by your browser.</p>
+<p>We use no cookies, no analytics, no tracking pixels, and no third-party services in your browser. We do not use localStorage, sessionStorage, or any other form of persistent client-side storage: your profile, requests and chats exist only in the open page. If you open Emberline in a second tab of the same browser, that tab can take over your session; the two tabs hand it over directly in memory, and nothing is stored. All fonts and cryptography libraries are self-hosted — no external requests are made by your browser.</p>
 <h2>Illegal content</h2>
 <p>Use of Emberline to share, solicit, or facilitate illegal content — including CSAM, harassment, or content illegal under Swiss law — is strictly prohibited. We cooperate with Swiss law enforcement under the Swiss Criminal Code.</p>
 <h2>Your rights under nFADP</h2>
-<p>You have the right to request access to any personal data we hold about you and to request its deletion. Because we store no user identities, no messages, and no session history, there is typically nothing to disclose or delete. The one category of data that could constitute personal data under nFADP is the IP entries in the abuse log described above; these can be removed on request if you provide the IP and an approximate time window. Contact: <a href="mailto:contactall@emberline.ch">contactall@emberline.ch</a>.</p>
+<p>You have the right to request access to any personal data we hold about you and to request its deletion. Your profile, requests and session data are deleted automatically when you log off, and we store no messages and no session history, so there is typically nothing to disclose or delete. Reports contain the username of the person reported, which is no longer linked to anyone once their profile is gone. The one category of data that could constitute personal data about you under nFADP is the IP entries in the abuse log described above; these can be removed on request if you provide the IP and an approximate time window. Contact: <a href="mailto:contactall@emberline.ch">contactall@emberline.ch</a>.</p>
 <h2>Changes</h2>
 <p>We may update this policy as the platform evolves. The effective date above reflects the most recent revision.</p>
 <hr><p class="small"><a href="/">← Back to Emberline</a></p>
@@ -985,10 +1301,14 @@ const TERMS_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <p class="date">Effective date: ${TERMS_EFFECTIVE_DATE} &nbsp;·&nbsp; Jurisdiction: Switzerland &nbsp;·&nbsp; Governing law: Swiss Code of Obligations (OR)</p>
 <div class="notice"><p>By using Emberline, you agree to these terms. If you do not agree, please do not use the platform.</p></div>
 <h2>1. What Emberline is</h2>
-<p>Emberline is an anonymous, ephemeral chat service connecting strangers on shared keywords. No accounts required. No messages stored. Conversations are end-to-end encrypted.</p>
+<p>Emberline is an ephemeral chat service. You go online with a temporary profile (a username, optionally a gender, and your interests), find people who share an interest, and chat with them once they accept your request. No accounts required. No messages stored. Requests and conversations are end-to-end encrypted. Your profile, requests and chats are deleted when you log off.</p>
 <h2>2. Eligibility</h2>
-<p>You must be at least 18 years old to use Emberline. By using the platform you confirm this.</p>
-<h2>3. Prohibited conduct</h2>
+<p>You must be at least 18 years old to use Emberline. By creating a profile you confirm this.</p>
+<h2>3. Your profile</h2>
+<p>Your profile is visible to other people online. You are responsible for what it shows. Do not use a username or interests that impersonate another person or Emberline, that are illegal, hateful or sexually explicit, or that contain someone else's personal data. Emberline may refuse usernames and words without giving a reason.</p>
+<h2>4. Requests and chats</h2>
+<p>A request must carry a message, so the other person can decide whether to accept. Do not send requests in bulk, and respect a request that is not answered: you cannot ask the same person again in that session. You can end a chat, block a person or report them at any time.</p>
+<h2>5. Prohibited conduct</h2>
 <p>You agree not to transmit, solicit, share, or facilitate:</p>
 <ul>
   <li>Child sexual abuse material (CSAM) or any content sexualising minors</li>
@@ -998,17 +1318,17 @@ const TERMS_HTML = allowStyleBlocks(`<!DOCTYPE html>
   <li>Automated access (bots, scrapers, scripts), other than Emberline's own clearly labeled AI chat</li>
   <li>Attempts to circumvent security or encryption mechanisms</li>
 </ul>
-<h2>4. CSAM — zero tolerance</h2>
+<h2>6. CSAM — zero tolerance</h2>
 <p>Any user who transmits, solicits, or facilitates CSAM will be reported to KOBIK immediately. Report directly at <a href="https://www.kobik.ch" target="_blank" rel="noopener noreferrer">www.kobik.ch</a>.</p>
-<h2>5. Optional AI chat</h2>
-<p>Emberline may offer an optional chat with an AI model operated by Emberline when no human match is available. It only starts at your request and is labeled as AI for its entire duration. AI replies are generated automatically, can be inaccurate or inappropriate, and are not advice of any kind. These terms apply to AI chats as well. The AI ends a chat if a user indicates they are under 18.</p>
-<h2>6. Anonymity and its limits</h2>
-<p>Emberline is designed to be anonymous. We require no accounts, store no messages, and retain no user identifiers. An IP-based abuse defense log is maintained for bot prevention only — see the Privacy Policy for full details. Anonymity at the technical layer does not exempt users from legal responsibility under Swiss law.</p>
-<h2>7. No warranty</h2>
+<h2>7. AI chat</h2>
+<p>Emberline offers an optional chat with an AI model operated by Emberline. It only starts at your request and is labeled as AI for its entire duration. AI replies are generated automatically, can be inaccurate or inappropriate, and are not advice of any kind. These terms apply to AI chats as well. The AI ends a chat if a user indicates they are under 18.</p>
+<h2>8. Anonymity and its limits</h2>
+<p>Emberline is designed to be anonymous. We require no accounts, store no messages, and keep profiles only while you are online. An IP-based abuse defense log is maintained for bot prevention only — see the <a href="/privacy">Privacy Policy</a> for full details. Anonymity at the technical layer does not exempt users from legal responsibility under Swiss law.</p>
+<h2>9. No warranty</h2>
 <p>Emberline is provided as-is without warranty of any kind. Use is at your own risk.</p>
-<h2>8. Governing law</h2>
+<h2>10. Governing law</h2>
 <p>These terms are governed exclusively by Swiss law. Disputes are subject to the exclusive jurisdiction of Swiss courts.</p>
-<h2>9. Contact</h2>
+<h2>11. Contact</h2>
 <p>Legal notices and law enforcement requests: <a href="mailto:contactall@emberline.ch">contactall@emberline.ch</a>.</p>
 <hr>
 <p class="small"><a href="/privacy">Privacy policy</a> &nbsp;·&nbsp; <a href="/">Back to Emberline</a></p>

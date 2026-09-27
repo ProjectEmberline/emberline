@@ -3,6 +3,11 @@
 > Anonymous keyword-based chat · Node.js + WebSocket · E2EE (NaCl) · Swiss jurisdiction
 >
 > **Design priorities, in order: User Experience → Privacy → Security → Simplicity**
+>
+> **Profiles beta:** keyword matching, the waiting screen and "next" were replaced
+> by temporary profiles, requests and chats. [PROFILES.md](./PROFILES.md) is the
+> reference for the protocol, limits and client behaviour; sections below that
+> describe keyword pools, matching or the waiting screen are out of date.
 
 ---
 

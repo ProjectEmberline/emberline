@@ -8,7 +8,7 @@
 
 ## What it is
 
-Emberline connects two strangers on shared keywords. You type a word or a few, and get matched with someone who typed the same thing. You chat. The session ends. Nothing is stored.
+Emberline shows you who's online with the same interests. You go online with a temporary profile (a username, optionally a gender, and a few interests), send someone a request with a short message, and chat once they accept. When you log off, your profile, requests and chats are deleted. Nothing is stored.
 
 All messages are end-to-end encrypted using NaCl box (Curve25519 + XSalsa20 + Poly1305). The server is a blind relay — it forwards ciphertext and nonce, and cannot read what passes through it. No database. No accounts. No persistent session state.
 
@@ -24,7 +24,7 @@ We believe in your right to privacy.
 
 ## How it works
 
-A Node.js process handles WebSocket connections and a small HTTP surface (`/challenge`, `/count`, `/report`, plus static files and the policy pages). Clients connect, solve a proof-of-work challenge, send keywords, and are matched with another client in the same keyword pool. Once matched, peers exchange public keys through the server — which cannot decrypt what follows — derive a shared secret client-side, and relay encrypted messages. The server keeps in-memory Maps for the waiting pool and active rooms, and writes nothing durable except abuse-prevention logs.
+A Node.js process handles WebSocket connections and a small HTTP surface (`/challenge`, `/count`, `/report`, plus static files and the policy pages). Clients connect, solve a proof-of-work challenge and create a profile that lives only in server memory. Others find it by interest, and send an end-to-end encrypted request; once it's accepted, the two exchange encrypted messages through the server, which cannot read them. Public keys are part of the profiles, so the server never sees plaintext. The server keeps in-memory Maps for profiles, requests and chats, and writes nothing durable except abuse-prevention logs and reports. See [PROFILES.md](./PROFILES.md) for the protocol and limits.
 
 The stack is intentionally small: Node.js, Express, `ws`, TweetNaCl on the client. No framework, no database, no build step. The entire client is one HTML file and one JavaScript file.
 
@@ -69,7 +69,7 @@ Only the `public/` directory is served over HTTP. Configuration is via environme
 
 ### Optional AI chat
 
-If no one matches a visitor's keywords, the waiting screen can offer "Chat with an AI instead". It is opt-in only, labeled as AI for the whole chat, and only offered while a bot is connected and its model is up. The bot is `bots/ember-bot.js`; it talks to any OpenAI-compatible local model server such as llama.cpp's `llama-server`.
+Discover can offer "Chat with an AI instead". It is opt-in only, labeled as AI for the whole chat, and only offered while a bot is connected and its model is up. The bot is `bots/ember-bot.js`; it talks to any OpenAI-compatible local model server such as llama.cpp's `llama-server`.
 
 1. Pick a long random secret and set it as `BOT_TOKEN` for the server.
 2. On the machine that runs the model, put the same secret in `bots/.bot-token` (git-ignored).
@@ -103,13 +103,13 @@ Emberline is built around a specific threat model — casual privacy from third 
 
 **Browser-delivered JavaScript is a fresh trust decision on every page load.** The server could in principle serve a modified client that exfiltrates plaintext. This is a structural weakness of all web-based end-to-end encryption, and the usual countermeasure (signed native binaries) does not translate to the browser. The commit hash footer is a partial mitigation, not a solution.
 
-**Server-mediated key exchange means the operator could MITM users.** Public keys are exchanged through the server at match time. A compromised server could substitute its own keypair for both peers and relay decrypted messages between them. Out-of-band verification (short authentication strings, phrase matching) would close this gap but is incompatible with the zero-friction design goal. This is an open problem.
+**Server-mediated key exchange means the operator could MITM users.** Public keys are exchanged through the server as part of the profiles. A compromised server could substitute its own keypair for both peers and relay decrypted messages between them. Out-of-band verification (short authentication strings, phrase matching) would close this gap but is incompatible with the zero-friction design goal. This is an open problem.
 
 **Single-operator trust.** The canonical instance is operated by the maintainers. There is no cryptographic way to prove the server running is exactly the code in this repository. The commit hash footer and the fact that the source is fully open are the best we can offer. If this trust model does not work for your threat model, self-host.
 
 **Metadata.** Even with nothing logged on the server, the network path inherently leaks connection timing and packet sizes. A global passive adversary watching both endpoints can infer that two IP addresses exchanged traffic, even without content.
 
-**IP-based abuse defense.** An unauthenticated, anonymous chat service without any IP-based rate limiting does not survive its first day online. Emberline logs IP addresses of abuse events (90-day rotation) and bans repeat offenders temporarily, in memory. This is the single deliberate deviation from a "no logs" posture. It is documented in [the privacy policy](https://emberline.ch/privacy) and is never cross-referenced against reports, conversations, or keywords — because none of those are stored.
+**IP-based abuse defense.** An unauthenticated, anonymous chat service without any IP-based rate limiting does not survive its first day online. Emberline logs IP addresses of abuse events (90-day rotation) and bans repeat offenders temporarily, in memory. This is the single deliberate deviation from a "no logs" posture. It is documented in [the privacy policy](https://emberline.ch/privacy) and is never cross-referenced against reports, profiles, or conversations — because none of those are stored.
 
 ---
 

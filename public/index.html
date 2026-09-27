@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Emberline — Just chat. Anonymous, end-to-end encrypted, no accounts</title>
-<meta name="description" content="Anonymous chat, match based on shared keywords. End-to-end encrypted with NaCl. No accounts, no message storage, free service. Swiss jurisdiction. Open source under AGPL-3.0.">
+<title>Emberline — Who's here. Anonymous, end-to-end encrypted, no accounts</title>
+<meta name="description" content="See who's online with your interests and chat with them. Profiles exist only while you're online and are deleted when you log off. End-to-end encrypted with NaCl. No accounts, no message storage, free service. Swiss jurisdiction. Open source under AGPL-3.0.">
 <meta property="og:title" content="Emberline — Anonymous encrypted chat">
-<meta property="og:description" content="Anonymous ephemeral chat, no accounts, no message storage, end-to-end encrypted. No Analytics. No Identification. Privacy is your right. Swiss jurisdiction.">
+<meta property="og:description" content="Show what you're into, chat with people who share it. No accounts, no message storage, end-to-end encrypted, deleted when you log off. Swiss jurisdiction.">
 <meta property="og:url" content="https://emberline.ch/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
@@ -19,6 +19,7 @@
 <link href="/fonts/fonts.css" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
 
   /* ── Tokens ─────────────────────────────────────────────────────────────
      "Action": flat Antarctic night, bold skewed headline left, one ember
@@ -37,7 +38,11 @@
     --on-accent:    #070c14;     /* text on solid ember */
     --surface:      #0b1522;     /* modal */
     --msg-me:       #e6f0f6;     /* you: white */
-    --msg-them:     #f0a26b;     /* stranger: ember */
+    --msg-them:     #f0a26b;     /* the other person: ember */
+    --ok:           #7fd4a8;
+    --warn:         #f2c46b;
+    --danger:       #ff8a7a;
+    --row:          rgba(255,255,255,0.03);
   }
   [data-theme="light"] {
     color-scheme: light;
@@ -54,228 +59,267 @@
     --surface:      #edf3f7;
     --msg-me:       #1c3242;
     --msg-them:     #3e88b8;
+    --ok:           #1f7a4d;
+    --warn:         #8a5a00;
+    --danger:       #b3261e;
+    --row:          rgba(0,0,0,0.03);
   }
 
   html { height: 100%; background: var(--paper); }
   body {
-    font-family: 'Manrope', system-ui, sans-serif;
-    font-weight: 300;
-    font-size: 16px;
-    line-height: 1.5;
-    color: var(--ink);
-    background: var(--paper);
-    height: 100dvh;
-    max-height: 100dvh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    font-family: 'Manrope', system-ui, sans-serif; font-weight: 300; font-size: 16px; line-height: 1.5;
+    color: var(--ink); background: var(--paper);
+    height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { cursor: pointer; background: none; border: 0; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  header {
-    padding: 20px 32px 0;
-    display: flex; justify-content: space-between; align-items: baseline;
-    flex-shrink: 0;
-  }
-  .logo { font-size: 1rem; letter-spacing: 0.4em; text-transform: uppercase; color: var(--ink-strong); }
-  .header-right { display: flex; align-items: center; gap: 12px; }
-  .tagline { font-size: 0.75rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
-  @media (max-width: 480px), (max-height: 600px) { .tagline { display: none; } }
-
+  header { padding: 20px 32px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-shrink: 0; }
+  .logo { font-size: 1rem; letter-spacing: 0.4em; text-transform: uppercase; color: var(--ink-strong); white-space: nowrap; }
+  .header-right { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .tagline { font-size: 0.75rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tagline .me-name { text-transform: none; letter-spacing: 0.05em; color: var(--ink); }
   #btn-theme {
     background: transparent; border: 1px solid var(--border); color: var(--muted);
-    border-radius: 999px; width: 32px; height: 32px; font-size: 0.8125rem; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 16px;
-    transition: border-color .2s, color .2s;
+    border-radius: 999px; width: 32px; height: 32px; font-size: 0.8125rem;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: border-color .2s, color .2s;
   }
   #btn-theme:hover { border-color: var(--accent); color: var(--accent); }
-
-  main { flex: 1; min-height: 0; display: flex; align-items: stretch; justify-content: center; padding: 24px; overflow: hidden; }
-  .card { width: 100%; max-width: 720px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  body.is-matched main { padding: 0; }
-  body.is-matched .card { max-width: 100%; padding: 0; overflow: hidden; }
-
-  /* ── Entry ───────────────────────────────────────────────────────────── */
-  #section-entry, #section-waiting, #section-matched { display: none; }
-  /* Scrolls when it doesn't fit (landscape phones). Auto margins centre it
-     without pushing content above the top; the padding keeps the skewed
-     headline inside the scroll box so no horizontal scrollbar appears. */
-  #section-entry {
-    display: flex; flex-direction: column; flex: 1; align-items: flex-start; text-align: left; gap: 24px;
-    min-height: 0; overflow-y: auto; padding: 0 24px; margin: 0 -24px; animation: fadeIn .05s ease;
+  .logoff {
+    font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--danger);
+    border: 1px solid var(--danger); border-radius: 4px; padding: 7px 12px; white-space: nowrap; flex-shrink: 0;
   }
-  #section-entry > :first-child { margin-top: auto; }
-  #section-entry > :last-child { margin-bottom: auto; }
-  .card h1 {
-    font-weight: 700; font-size: clamp(3.5rem, 11vw, 8rem); line-height: 0.92; letter-spacing: -0.04em;
+  .logoff:hover { background: var(--row); }
+
+  main { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; display: flex; justify-content: center; }
+  .card { width: 100%; max-width: 720px; display: flex; flex-direction: column; }
+  body.is-chat main { overflow: hidden; padding: 12px 24px; }
+  body.is-chat footer { display: none; }
+
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  h1.hero {
+    font-weight: 700; font-size: clamp(3rem, 10vw, 6.5rem); line-height: 0.92; letter-spacing: -0.04em;
     text-transform: uppercase; color: var(--ink-strong); transform: skewX(-6deg); transform-origin: left bottom;
   }
-  .card p.sub { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.5rem; color: var(--accent-hover); }
+  p.sub { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.375rem; color: var(--accent-hover); }
+  .serif { font-family: 'Playfair Display', Georgia, serif; font-style: italic; }
+  .label { display: block; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
   .trust { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); line-height: 2; }
-  .age-note { font-size: 0.75rem; color: var(--muted); }
-  .age-note a { color: inherit; text-underline-offset: 3px; }
-  .age-note a:hover { color: var(--accent); }
+  .hint { font-size: 0.8125rem; color: var(--muted); }
+  .err { font-size: 0.8125rem; color: var(--danger); margin-top: 6px; }
+  .err:empty { display: none; }
+  .link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; font-size: 0.8125rem; }
+  .ok-text { color: var(--ok); } .warn-text { color: var(--warn); }
 
-  .tag-field {
-    width: 100%; min-height: 48px; padding: 8px 0;
-    display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; column-gap: 8px; row-gap: 8px;
-    cursor: text;
+  /* ── Entry ───────────────────────────────────────────────────────────── */
+  .form { display: flex; flex-direction: column; gap: 26px; padding-bottom: 24px; }
+  .line-input {
+    width: 100%; border: 0; border-bottom: 1px solid var(--border); background: transparent; outline: none;
+    font-size: 1.375rem; letter-spacing: 0.04em; color: var(--ink-strong); padding: 10px 0; transition: border-color .2s;
   }
+  .line-input:focus { border-color: var(--accent); }
+  /* Placeholders read as hints, not as something already filled in */
+  .line-input::placeholder, .tag-field input::placeholder { color: var(--muted); opacity: .7; font-style: italic; letter-spacing: 0.02em; }
+  .line-input.small { font-size: 1.125rem; }
+  .tag-field { width: 100%; min-height: 48px; padding: 8px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: text; }
   #tag-list { display: contents; }  /* pills and the input share one wrapping row */
   .tag-field input {
     border: 0; border-bottom: 1px solid var(--border); background: transparent; outline: none;
-    font: inherit; font-size: 1.375rem; letter-spacing: 0.08em; text-align: left; color: var(--ink-strong);
-    flex: 1; min-width: 160px; max-width: 520px; padding: 10px 0; transition: border-color .2s;
+    font-size: 1.375rem; letter-spacing: 0.08em; color: var(--ink-strong); flex: 1; min-width: 160px; max-width: 520px; padding: 10px 0; transition: border-color .2s;
   }
   .tag-field input:focus { border-color: var(--accent); }
-  .tag-field input::placeholder { color: var(--muted); }
-  .hint { font-size: 0.8125rem; color: var(--muted); }
   #hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
-
-  .tag-pill, .keyword-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 0.875rem; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase;
-    padding: 8px 14px; border: 0; border-radius: 4px; background: var(--accent); color: var(--on-accent); white-space: nowrap;
+  .tag-pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; font-weight: 500; letter-spacing: 0.2em;
+    text-transform: uppercase; padding: 8px 14px; border-radius: 4px; background: var(--accent); color: var(--on-accent); white-space: nowrap;
   }
-  .tag-pill button { background: none; border: 0; cursor: pointer; color: var(--on-accent); opacity: .7; font-size: 1rem; line-height: 1; padding: 0; width: auto; }
-  .tag-pill button:hover { opacity: 1; background: none; }
+  .tag-pill button { color: var(--on-accent); opacity: .7; font-size: 1rem; line-height: 1; }
+  .tag-pill button:hover { opacity: 1; }
+  .choice {
+    font-size: 0.6875rem; letter-spacing: 0.15em; text-transform: uppercase; padding: 5px 9px; border-radius: 4px;
+    box-shadow: inset 0 0 0 1px var(--border); color: var(--ink);
+  }
+  .choice[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: none; font-weight: 500; }
+  .choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .preview { border: 1px dashed var(--border); border-radius: 4px; padding: 0 14px; }
+  .preview .person { border: 0; }
+  .preview .is-sample { opacity: .6; font-style: italic; } /* stand-in text until something is typed */
+  .notice { border-left: 2px solid var(--accent); padding: 8px 14px; font-size: 0.875rem; color: var(--muted); }
+  .check { display: flex; gap: 10px; align-items: center; font-size: 0.875rem; color: var(--muted); }
+  .check input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  .check a { color: inherit; text-underline-offset: 3px; }
+  .handover { border: 1px solid var(--accent); border-radius: 4px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
 
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
   .btn {
-    font: inherit; font-size: 0.875rem; font-weight: 500; letter-spacing: 0.3em; text-transform: uppercase;
+    font-size: 0.875rem; font-weight: 500; letter-spacing: 0.3em; text-transform: uppercase;
     height: 48px; padding: 0 40px; background: var(--accent); color: var(--on-accent);
-    border: 0; border-radius: 4px; cursor: pointer; transform: skewX(-6deg);
+    border-radius: 4px; transform: skewX(-6deg); white-space: nowrap;
     box-shadow: 0 0 36px var(--accent-soft); transition: background .2s, box-shadow .2s;
   }
   .btn:hover { background: var(--accent-hover); box-shadow: 0 0 44px var(--accent-soft); }
   .btn:disabled { background: var(--border); color: var(--muted); box-shadow: none; cursor: not-allowed; }
-  .btn-ghost, .btn-next { background: transparent; border: 0; box-shadow: none; transform: none; padding: 0 8px; height: 44px; font-size: 0.75rem; font-weight: 300; color: var(--muted); }
-  .btn-ghost:hover { background: transparent; color: var(--ink); box-shadow: none; }
-  .btn-next { color: var(--ink-strong); }
-  .btn-next:hover { background: transparent; color: var(--accent); box-shadow: none; }
+  .btn.small { height: 38px; padding: 0 18px; font-size: 0.75rem; letter-spacing: 0.2em; transform: none; }
+  .btn.danger { background: #c0392b; color: #fff; box-shadow: none; }  /* ~5.4:1 */
+  .btn.danger:hover { background: #a93226; }
+  .btn.dim { opacity: .45; }
+  .ghost { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); padding: 0 8px; height: 40px; white-space: nowrap; }
+  .ghost:hover { color: var(--ink); }
+  .ghost.accent { color: var(--accent); }
+  .ghost.accent:hover { color: var(--accent-hover); }
+  .ghost.danger { color: var(--danger); }
+  .ghost.done { color: var(--border); cursor: default; }
+  .ghost.first { padding-left: 0; }
 
-  /* ── Waiting ─────────────────────────────────────────────────────────── */
-  #section-waiting { flex-direction: column; flex: 1; position: relative; animation: fadeIn .05s ease; }
-  .waiting { text-align: center; padding: 24px 0; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .ember-sparks { width: 60px; height: 70px; margin: 0 auto 24px; position: relative; }
-  .spark { position: absolute; border-radius: 50%; bottom: 0; background: var(--accent); }
-  .spark-1 { width: 4px; height: 4px; left: 28px; animation: spark-rise1 2.0s ease-out infinite; }
-  .spark-2 { width: 3px; height: 3px; left: 36px; animation: spark-rise2 2.4s ease-out infinite .7s; }
-  .spark-3 { width: 5px; height: 5px; left: 20px; animation: spark-rise3 2.8s ease-out infinite 1.3s; }
-  .spark-4 { width: 2px; height: 2px; left: 32px; animation: spark-rise4 1.8s ease-out infinite .4s; }
-  .spark-5 { width: 3px; height: 3px; left: 24px; animation: spark-rise5 2.2s ease-out infinite 1.8s; }
-  .spark-6 { width: 2px; height: 2px; left: 40px; animation: spark-rise1 2.6s ease-out infinite 2.2s; }
-  .spark-7 { width: 4px; height: 4px; left: 16px; animation: spark-rise2 3.0s ease-out infinite .9s; }
-  @keyframes spark-rise1 { 0%{transform:translateY(0);opacity:.9} 100%{transform:translateY(-50px) translateX(3px);opacity:0} }
-  @keyframes spark-rise2 { 0%{transform:translateY(0);opacity:.7} 100%{transform:translateY(-44px) translateX(-5px);opacity:0} }
-  @keyframes spark-rise3 { 0%{transform:translateY(0);opacity:.8} 100%{transform:translateY(-56px) translateX(4px);opacity:0} }
-  @keyframes spark-rise4 { 0%{transform:translateY(0);opacity:.6} 100%{transform:translateY(-38px) translateX(-3px);opacity:0} }
-  @keyframes spark-rise5 { 0%{transform:translateY(0);opacity:.9} 100%{transform:translateY(-48px) translateX(6px);opacity:0} }
-  .waiting h2 { font-weight: 700; font-size: 2rem; letter-spacing: -0.02em; text-transform: uppercase; color: var(--ink-strong); margin-bottom: 8px; }
-  .waiting p { color: var(--muted); font-size: 0.875rem; margin-bottom: 24px; }
-  .waiting .waiting-label { margin-bottom: 8px; }
-  #display-keyword { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 8px; }
-  .waiting .waiting-count { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1rem; margin: 12px 0 0; }
-  #btn-cancel { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); }
-
-  /* Optional AI chat — opt-in, always labeled */
-  .ai-offer { margin-top: 24px; max-width: 320px; }
-  .ai-offer .btn { border: 1px solid var(--accent); color: var(--accent); padding: 0 20px; }
-  .ai-offer .btn:hover { background: var(--accent-soft); color: var(--accent); }
-  .waiting .ai-offer-note { font-size: 0.75rem; line-height: 1.5; margin: 8px 0 0; }
-  .ai-banner {
-    display: none; margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 4px;
-    color: var(--accent); font-size: 0.8125rem; line-height: 1.4; text-align: center;
+  /* ── Live area ───────────────────────────────────────────────────────── */
+  .tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--border); margin-bottom: 22px; }
+  .tab { padding: 10px 0; font-size: 0.75rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid transparent; margin-bottom: -1px; display: flex; gap: 8px; align-items: center; }
+  .tab[aria-selected="true"] { color: var(--ink-strong); border-bottom-color: var(--accent); }
+  .badge { background: var(--accent); color: var(--on-accent); font-size: 0.6875rem; letter-spacing: 0; border-radius: 9px; padding: 0 6px; font-weight: 500; }
+  .badge:empty { display: none; }
+  .note { font-size: 0.875rem; color: var(--ink); border-left: 2px solid var(--accent); padding: 6px 12px; margin: -8px 0 16px; background: var(--row); }
+  .note:empty { display: none; }
+  .banner { display: flex; gap: 10px; align-items: center; padding: 10px 14px; font-size: 0.875rem; border-left: 2px solid var(--warn); background: var(--row); margin-bottom: 16px; flex-wrap: wrap; }
+  .banner:empty { display: none; }
+  .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 22px 0 8px; }
+  .meta.first { margin-top: 0; }
+  .meta .label { margin: 0; }
+  .tick { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+  .tick i { width: 36px; height: 1px; background: var(--border); position: relative; overflow: hidden; }
+  .tick i::after { content: ''; position: absolute; inset: 0; background: var(--accent); transform-origin: left; animation: fill 5s linear infinite; }
+  @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: baseline; gap: 8px; font-size: 0.8125rem; letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 7px 12px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--border); color: var(--ink); transition: background .6s;
   }
-  .ai-banner strong { font-weight: 700; letter-spacing: 0.2em; margin-right: 8px; }
-  body.is-ai .ai-banner { display: block; }
+  .chip:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+  .chip .n { font-size: 0.6875rem; letter-spacing: 0.05em; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip.sel { background: var(--accent); color: var(--on-accent); box-shadow: none; font-weight: 500; }
+  .chip.sel .n { color: var(--on-accent); }
+  .chip.flash { background: var(--accent-soft); }
+  .search-row { margin-top: 18px; }
+  .ai-card { border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; margin-top: 22px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .ai-card b { font-weight: 700; letter-spacing: 0.2em; color: var(--accent); margin-right: 6px; }
+
+  .person { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--border); }
+  .person.gone { opacity: .5; }
+  .person.clickable { cursor: pointer; }
+  .who { flex: 1; min-width: 0; }
+  .who .u { color: var(--ink-strong); font-weight: 500; letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who .g { font-size: 0.75rem; color: var(--muted); font-weight: 300; margin-left: 8px; letter-spacing: 0.05em; }
+  .who .t { font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who .t b { color: var(--accent); font-weight: 500; }
+  .who .t .on { color: var(--ok); } .who .t .recon { color: var(--warn); }
+  .acts { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .req { border-top: 1px solid var(--border); padding: 16px 0; }
+  .req .person { border: 0; padding: 0 0 8px; }
+  .req .acts { justify-content: flex-start; margin-left: -8px; }
+  .req.gone { opacity: .5; }
+  .message { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.1875rem; color: var(--msg-them); border-left: 2px solid var(--accent); padding: 2px 0 2px 14px; margin: 4px 0 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .message.mine { color: var(--msg-me); border-left-color: var(--border); font-size: 1rem; }
+  .when { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  .empty { padding: 14px 0; border-top: 1px solid var(--border); font-size: 0.8125rem; color: var(--muted); }
+  .switch { display: flex; gap: 14px; align-items: center; cursor: pointer; padding: 4px 0 18px; }
+  .switch input { position: absolute; opacity: 0; }
+  .track { width: 38px; height: 22px; border-radius: 11px; box-shadow: inset 0 0 0 1px var(--border); position: relative; flex: none; transition: background .2s; }
+  .track::after { content: ''; position: absolute; top: 4px; left: 4px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform .2s, background .2s; }
+  .switch input:checked + .track { background: var(--accent); box-shadow: none; }
+  .switch input:checked + .track::after { transform: translateX(16px); background: var(--on-accent); }
+  .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .switch strong { font-weight: 400; color: var(--ink-strong); display: block; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 6px; vertical-align: 1px; }
+  .dot.recon { background: var(--warn); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
 
   /* ── Chat ────────────────────────────────────────────────────────────── */
-  .chat-column, .chat-column-grow { width: 100%; max-width: 640px; margin: 0 auto; padding: 0 24px; }
-  .chat-column-grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .chat-column-controls { padding-top: 8px; }
-  #section-matched { flex-direction: column; height: 100%; flex: 1; min-height: 0; position: relative; }
-  body.is-matched #section-matched { display: flex; padding-top: 12px; padding-bottom: 12px; }
-
-  .chat-box { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0; margin-bottom: 12px; display: flex; flex-direction: column; scrollbar-width: none; }
+  #view-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; max-width: 640px; width: 100%; margin: 0 auto; }
+  .chat-head { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .e2e { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+  .ai-banner { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); font-size: 0.8125rem; line-height: 1.4; text-align: center; flex-shrink: 0; }
+  .ai-banner strong { font-weight: 700; letter-spacing: 0.2em; margin-right: 8px; }
+  .chat-box { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 0; display: flex; flex-direction: column; scrollbar-width: none; }
   .chat-box::-webkit-scrollbar { display: none; }
-
-  .msg {
-    max-width: 85%; font-size: 1.1875rem; line-height: 1.5; margin-top: 36px; flex-shrink: 0;  /* else a long chat squeezes every bubble instead of scrolling */
-    white-space: pre-wrap; overflow-wrap: anywhere;
-  }
+  .msg { max-width: 85%; font-size: 1.1875rem; line-height: 1.5; margin-top: 36px; flex-shrink: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg:first-child { margin-top: 0; }
   .msg.me + .msg.me, .msg.them + .msg.them { margin-top: 6px; }
-  .msg.them { align-self: flex-start; text-align: left;  color: var(--msg-them); }
+  .msg.them { align-self: flex-start; text-align: left; color: var(--msg-them); }
   .msg.me   { align-self: flex-end;   text-align: right; color: var(--msg-me); }
-  /* Conversation over (match left, connection lost): everything turns to ash */
   .msg.me, .msg.them { transition: color .6s; }
-  body.is-over .msg.me, body.is-over .msg.them { color: var(--muted); }
+  .chat-over .msg.me, .chat-over .msg.them { color: var(--muted); }
   .msg.system {
     align-self: center; text-align: center; max-width: 100%; margin: 0 0 8px;
     font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.0625rem; color: var(--muted);
   }
   .msg.system:not(:first-child) { margin-top: 24px; }
-  .msg.system em { font-style: italic; color: var(--accent); }
-
   @keyframes typing-fade { 0%,100%{opacity:.3} 50%{opacity:.9} }
-  .typing-indicator { font-size: 0.8125rem; color: var(--ice); letter-spacing: 0.3em; margin-top: 24px; animation: typing-fade 2s ease-in-out infinite; }
-
-  .chat-input-row { display: flex; gap: 12px; align-items: flex-end; border-bottom: 1px solid var(--border); transition: border-color .2s; }
+  .typing-indicator { font-size: 0.8125rem; color: var(--ice); letter-spacing: 0.3em; margin-top: 24px; animation: typing-fade 2s ease-in-out infinite; flex-shrink: 0; }
+  .chat-input-row { display: flex; gap: 12px; align-items: flex-end; border-bottom: 1px solid var(--border); transition: border-color .2s; flex-shrink: 0; }
   .chat-input-row:focus-within { border-color: var(--accent); }
   .chat-input-row textarea {
     flex: 1; padding: 10px 0; border: 0; background: transparent; outline: none; resize: none; overflow: hidden;
-    font: inherit; font-size: 1.125rem; line-height: 1.5; color: var(--ink-strong); min-height: 0; max-height: 200px;
+    font-size: 1.125rem; line-height: 1.5; color: var(--ink-strong); min-height: 0; max-height: 200px;
   }
   .chat-input-row textarea.at-height-limit { overflow-y: auto; scrollbar-width: none; }
-  .chat-input-row textarea.at-height-limit::-webkit-scrollbar { display: none; }
   .chat-input-row:has(textarea.at-height-limit) { border-color: var(--accent); }
   .chat-input-row textarea::placeholder { color: var(--muted); }
   .chat-char-count { font-size: 0.6875rem; letter-spacing: 0.1em; color: var(--muted); opacity: 0; transition: opacity .2s; flex-shrink: 0; white-space: nowrap; padding-bottom: 14px; }
   .chat-char-count.visible { opacity: 1; }
   .chat-char-count.urgent { color: var(--accent); }
-  #btn-send {
-    font: inherit; font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase;
-    height: 44px; padding: 0 4px; background: transparent; border: 0; color: var(--accent); cursor: pointer; transition: color .2s;
-  }
-  #btn-send:hover { color: var(--accent-hover); }
-  #btn-send:disabled { color: var(--border); cursor: not-allowed; }
-  .chat-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; flex-shrink: 0; }
-  #btn-leave { padding-left: 0; }
-  #btn-next { padding-right: 0; }
+  .send { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; height: 44px; padding: 0 4px; color: var(--accent); transition: color .2s; }
+  .send:hover { color: var(--accent-hover); }
+  .chat-closed { text-align: center; padding: 10px 0; flex-shrink: 0; }
+  .chat-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; flex-shrink: 0; }
+  .chat-actions .note { margin: 8px 0 0; }
 
   /* ── Modals ──────────────────────────────────────────────────────────── */
-  .modal { display: none; position: absolute; inset: 0; background: rgba(4,8,14,0.72); z-index: 100; align-items: center; justify-content: center; padding: 24px; }
-  #install-ios { position: fixed; z-index: 200; }
-  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; max-width: 400px; width: 100%; margin: auto; }
-  .report-title { font-weight: 300; font-size: 1.25rem; letter-spacing: 0.06em; color: var(--ink-strong); margin-bottom: 8px; }
-  .modal p { font-size: 0.875rem; color: var(--muted); line-height: 1.5; }
-  .modal label { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); display: block; margin: 16px 0 4px; }
+  .modal { position: fixed; inset: 0; background: rgba(4,8,14,0.72); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; max-width: 420px; width: 100%; margin: auto; }
+  .modal-title { font-weight: 300; font-size: 1.25rem; letter-spacing: 0.06em; color: var(--ink-strong); margin-bottom: 8px; overflow-wrap: anywhere; }
+  .modal p { font-size: 0.875rem; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+  .modal p.lead { color: var(--ink-strong); font-size: 0.9375rem; margin-top: 14px; }
+  .modal p.lead b { color: var(--accent); font-weight: 500; }
+  .modal label.field { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); display: block; margin: 16px 0 4px; }
   .modal select, .modal textarea {
     width: 100%; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
-    font: inherit; font-size: 0.9375rem; outline: none;
+    font-size: 0.9375rem; outline: none;
   }
-  .modal select { margin-top: 16px; }
+  .modal select { margin-top: 8px; }
   .modal textarea { line-height: 1.5; resize: vertical; min-height: 88px; }
   .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
+  .modal .counter { font-size: 0.8125rem; margin-top: 6px; }
   .modal .char { font-size: 0.6875rem; color: var(--muted); margin: 4px 0 12px; text-align: right; }
-  .modal-actions { display: flex; flex-wrap: wrap; gap: 8px; }  /* stacks when the labels don't fit */
-  .modal-actions .btn { flex: 1 1 auto; padding: 0 16px; transform: none; white-space: nowrap; }
-  .btn-danger { background: #c0392b; color: #fff; box-shadow: none; }  /* ~5.4:1 */
-  .btn-danger:hover { background: #a93226; }
+  .modal .check { margin-top: 12px; }
+  .modal-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .delete-list { list-style: none; margin: 8px 0 12px; font-size: 0.875rem; color: var(--ink); }
+  .delete-list li { padding: 3px 0 3px 18px; position: relative; }
+  .delete-list li::before { content: '×'; position: absolute; left: 0; color: var(--danger); }
   .install-box { max-width: 360px; text-align: center; }
-  .install-title { margin-bottom: 12px; }
-  .install-text { margin-bottom: 20px; }
-  .install-text strong { color: var(--ink); font-weight: 400; }
+  .install-box strong { color: var(--ink); font-weight: 400; }
 
-  footer { text-align: center; padding: 12px 24px; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+  footer { text-align: center; padding: 12px 24px; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); flex-shrink: 0; }
   footer a { color: var(--muted); text-decoration: none; }
   footer a:hover { color: var(--accent); }
   #install-link, #install-sep { display: none; }
+  #install-link.shown, #install-sep.shown { display: inline; }
 
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .fade { animation: fadeIn .15s ease; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
-  @media (max-width: 480px) { main { padding: 16px; } .msg { max-width: 92%; } .card h1 { font-size: clamp(3rem, 18vw, 5rem); } }
+  @media (max-width: 480px) {
+    header { padding: 16px 16px 0; }
+    .logo { letter-spacing: 0.25em; }
+    .tagline { display: none; }
+    main { padding: 16px; }
+    body.is-chat main { padding: 8px 16px; }
+    .logoff { padding: 4px 10px; line-height: 1.35; letter-spacing: 0.15em; }
+    .logoff .sep { display: none; } .logoff .l2 { display: block; }
+    .tabs { gap: 16px; } .tab { letter-spacing: 0.15em; }
+    .person { flex-wrap: wrap; } .person .acts { width: 100%; justify-content: flex-start; margin-left: -8px; }
+    .msg { max-width: 92%; }
+  }
 </style>
 </head>
 <body>
@@ -283,7 +327,8 @@
 <header>
   <div class="logo">Emberline.ch</div>
   <div class="header-right">
-    <div class="tagline" id="user-count">— embers are sparkling</div>
+    <div class="tagline" id="tagline">— embers are sparkling</div>
+    <button class="logoff" id="btn-logoff" hidden title="Log off and delete your profile, requests and chats">log off<span class="sep"> · </span><span class="l2">delete all</span></button>
     <button id="btn-theme" title="Toggle light / dark mode" aria-label="Toggle theme">☀</button>
   </div>
 </header>
@@ -291,103 +336,181 @@
 <main>
   <div class="card">
 
-    <!-- ENTRY -->
-    <div id="section-entry">
-      <h1>Just Chat</h1>
-      <p class="sub">add your interests and match with someone else</p>
-      <div class="tag-field" id="tag-field">
-        <div id="tag-list"></div>
-        <input type="text" id="keyword-input" placeholder="type here…" maxlength="20" autocomplete="off" aria-label="Interests" />
+    <!-- ENTRY: the whole profile on one page -->
+    <section id="view-entry" class="form fade">
+      <div class="handover" id="handover" hidden>
+        <span>You're online as <b id="handover-name"></b> in another tab.</span>
+        <button class="btn small" id="btn-handover">Continue here</button>
       </div>
-      <p class="hint">up to ten words · Enter, space or comma after each</p>
-      <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
-      <button class="btn" id="btn-enter" disabled>Find my match →</button>
+      <h1 class="hero">You</h1>
+      <p class="sub">add your interests, chat with people who share them</p>
       <div>
-        <p class="trust">no&nbsp;accounts &nbsp;·&nbsp; no&nbsp;storage &nbsp;·&nbsp; no&nbsp;ads &nbsp;·&nbsp; end-to-end&nbsp;encrypted</p>
-        <p class="age-note">18+ only. By continuing you confirm you are an adult and agree to the <a href="/terms">Terms</a>.</p>
+        <label class="label" for="name-input">username</label>
+        <input class="line-input" id="name-input" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type a name…">
+        <p class="err" id="err-name"></p>
       </div>
-    </div>
-
-    <!-- WAITING -->
-    <div id="section-waiting">
-      <div class="waiting">
-        <div class="ember-sparks" aria-hidden="true">
-          <div class="spark spark-1"></div>
-          <div class="spark spark-2"></div>
-          <div class="spark spark-3"></div>
-          <div class="spark spark-4"></div>
-          <div class="spark spark-5"></div>
-          <div class="spark spark-6"></div>
-          <div class="spark spark-7"></div>
-        </div>
-        <h2>Looking</h2>
-        <p class="waiting-label">matching on any of these</p>
-        <div id="display-keyword"></div>
-        <p id="waiting-info" class="waiting-count"></p>
-        <div id="ai-offer" class="ai-offer" hidden>
-          <button class="btn btn-ghost" id="btn-ai">Chat with an AI instead</button>
-          <p class="ai-offer-note">An AI model run by Emberline — not a person. It reads your keywords and messages to reply. Nothing is stored.</p>
-        </div>
+      <div>
+        <span class="label">gender · optional</span>
+        <div class="choices" id="gender-choices" role="group" aria-label="Gender"></div>
       </div>
-      <button class="btn btn-ghost" id="btn-cancel">Cancel</button>
-    </div>
-
-    <!-- MATCHED -->
-    <div id="section-matched">
-
-      <div class="chat-column-grow">
-        <div class="ai-banner" id="ai-banner" role="note"><strong>AI</strong>You are chatting with an AI model run by Emberline, not a person.</div>
-        <div class="chat-box" id="chat-box">
-          <div class="msg system">Finding your match…</div>
+      <div>
+        <span class="label">interests · up to ten</span>
+        <div class="tag-field" id="tag-field">
+          <div id="tag-list"></div>
+          <input type="text" id="keyword-input" placeholder="type here…" maxlength="24" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Interests">
         </div>
+        <p class="hint">up to ten words · Enter, space or comma after each</p>
+        <p class="err" id="err-tags"></p>
       </div>
-
-      <div class="chat-column chat-column-controls">
-        <div class="chat-input-row">
-          <textarea id="chat-input" placeholder="write" maxlength="300" autocomplete="off" rows="1" aria-label="Message"></textarea>
-          <span class="chat-char-count" id="chat-char-count"></span>
-          <button id="btn-send">send</button>
-        </div>
-        <div class="chat-actions">
-          <button class="btn btn-ghost" id="btn-leave">leave</button>
-          <button class="btn btn-ghost" id="btn-report" title="Report this conversation">report</button>
-          <button class="btn btn-next" id="btn-next">next</button>
-        </div>
+      <div>
+        <span class="label">how others see you</span>
+        <div class="preview" id="preview"></div>
       </div>
-
-      <!-- Report modal -->
-      <div id="report-modal" class="modal">
-        <div class="modal-box">
-          <h3 class="report-title">Report this conversation</h3>
-          <p>Select a reason and, if you like, describe what happened. Only the reason, the time, and anything you write below are recorded — no chat messages, and your IP address is not stored.</p>
-          <select id="report-reason" aria-label="Reason">
-            <option value="">— Select a reason —</option>
-            <option value="csam">Child sexual abuse material (CSAM)</option>
-            <option value="harassment">Harassment or threats</option>
-            <option value="illegal">Other illegal content</option>
-            <option value="spam">Spam or bot</option>
-          </select>
-          <label for="report-details">Additional details (optional)</label>
-          <textarea id="report-details" maxlength="500" placeholder="Describe what happened in your own words…"></textarea>
-          <p class="char" id="report-char-count">0 / 500</p>
-          <div class="modal-actions">
-            <button class="btn btn-ghost" id="btn-report-cancel">Cancel</button>
-            <button class="btn btn-danger" id="btn-report-submit">Submit report</button>
-          </div>
-        </div>
+      <p class="notice">Visible to anyone online while you are. People can only reach you with a request and a message, and you decide who gets through. When you log off, your profile, requests and chats are deleted.</p>
+      <div>
+        <p class="check"><label class="check" for="adult"><input type="checkbox" id="adult"> 18+ only. I confirm I'm an adult and agree to the</label>&nbsp;<a href="/terms">Terms</a>.</p>
+        <p class="err" id="err-adult"></p>
       </div>
-    </div>
+      <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <div><button class="btn" id="btn-go">Go online →</button></div>
+      <p class="err" id="err-go"></p>
+      <p class="trust">no&nbsp;accounts &nbsp;·&nbsp; no&nbsp;storage &nbsp;·&nbsp; no&nbsp;ads &nbsp;·&nbsp; end-to-end&nbsp;encrypted</p>
+    </section>
+
+    <!-- LIVE: discover, requests, messages -->
+    <section id="view-main" hidden>
+      <div class="banner" id="banner" role="status"></div>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-discover" aria-selected="true">discover</button>
+        <button class="tab" role="tab" id="tab-requests" aria-selected="false">requests <span class="badge" id="badge-requests"></span></button>
+        <button class="tab" role="tab" id="tab-messages" aria-selected="false">messages <span class="badge" id="badge-messages"></span></button>
+      </div>
+      <div class="note" id="note" role="status" aria-live="polite"></div>
+
+      <div id="panel-discover">
+        <div class="meta first"><span class="label">your interests · online now</span><span class="tick"><i></i>live</span></div>
+        <div class="chips" id="chips-mine"></div>
+        <div class="meta"><span class="label" id="top-label">popular now</span><button class="link" id="btn-all"></button></div>
+        <div class="chips" id="chips-top"></div>
+        <div class="ai-card" id="ai-card" hidden>
+          <span><b>AI</b><span class="hint">Chat with an AI instead: not a person. It reads your interests and messages to reply. Nothing is stored.</span></span>
+          <button class="ghost accent" id="btn-ai">start AI chat</button>
+        </div>
+        <div class="search-row"><input class="line-input small" id="search-input" maxlength="24" placeholder="search an interest" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div id="results"></div>
+      </div>
+      <div id="panel-requests" hidden></div>
+      <div id="panel-messages" hidden></div>
+    </section>
+
+    <!-- CHAT -->
+    <section id="view-chat" hidden>
+      <div class="chat-head">
+        <button class="ghost first" id="btn-back" aria-label="Back to messages">←</button>
+        <div class="who"><div class="u" id="chat-name"></div><div class="t" id="chat-status"></div></div>
+        <span class="e2e">end-to-end encrypted</span>
+      </div>
+      <div class="ai-banner" id="ai-banner" role="note" hidden><strong>AI</strong>You are chatting with an AI model run by Emberline, not a person.</div>
+      <div class="chat-box" id="chat-box"></div>
+      <div class="chat-input-row" id="chat-input-row">
+        <textarea id="chat-input" placeholder="write" maxlength="300" autocomplete="off" rows="1" aria-label="Message"></textarea>
+        <span class="chat-char-count" id="chat-char-count"></span>
+        <button class="send" id="btn-send">send</button>
+      </div>
+      <p class="chat-closed serif hint" id="chat-closed" hidden></p>
+      <div class="chat-actions">
+        <button class="ghost first" id="btn-end">end chat</button>
+        <button class="ghost" id="btn-report">report</button>
+        <button class="ghost danger" id="btn-block">block</button>
+      </div>
+      <div class="chat-actions"><div class="note" id="chat-note" role="status" aria-live="polite"></div></div>
+    </section>
+
+    <!-- AFTER LOG OFF -->
+    <section id="view-gone" class="form fade" hidden>
+      <h1 class="hero" id="gone-title">Deleted</h1>
+      <p class="sub" id="gone-sub">you're logged off, and everything is gone</p>
+      <p id="gone-text">Your profile, your requests and your chats were deleted from the server when you logged off. The people you talked to still have whatever they saw on their own screens.</p>
+      <div><button class="btn" id="btn-again">Start again →</button></div>
+    </section>
 
   </div>
 </main>
 
 <footer>__BUILD_FOOTER__<a href="#" id="install-link">install</a><span id="install-sep"> &nbsp;·&nbsp; </span><a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="/terms">Terms</a></footer>
 
-<div id="install-ios" class="modal">
+<!-- Request: the message is required, and says so before you type -->
+<div class="modal" id="modal-request" hidden role="dialog" aria-modal="true" aria-labelledby="request-title">
+  <div class="modal-box">
+    <h3 class="modal-title" id="request-title"></h3>
+    <p id="request-why"></p>
+    <p class="lead">Write a message of <b>at least 10 characters</b>.</p>
+    <p id="request-lead2"></p>
+    <textarea id="request-text" rows="3" maxlength="200" placeholder="say who you are and why you would like to chat" aria-describedby="request-count"></textarea>
+    <p class="counter" id="request-count"></p>
+    <p class="err" id="request-err"></p>
+    <div class="modal-actions">
+      <button class="ghost" id="btn-request-cancel">cancel</button>
+      <button class="btn small" id="btn-request-send">Send request</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generic confirm (end chat, block) -->
+<div class="modal" id="modal-confirm" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="modal-box">
+    <h3 class="modal-title" id="confirm-title"></h3>
+    <p id="confirm-body"></p>
+    <div class="modal-actions">
+      <button class="ghost" id="btn-confirm-cancel">cancel</button>
+      <button class="btn small danger" id="btn-confirm-ok"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Report -->
+<div class="modal" id="modal-report" hidden role="dialog" aria-modal="true" aria-labelledby="report-title">
+  <div class="modal-box">
+    <h3 class="modal-title" id="report-title">Report</h3>
+    <p>The report records their username, the reason and anything you write below. Never your chat messages (we can't read them), and nothing about you. Kept up to 90 days.</p>
+    <select id="report-reason" aria-label="Reason">
+      <option value="">— Select a reason —</option>
+      <option value="csam">Child sexual abuse material (CSAM)</option>
+      <option value="harassment">Harassment or threats</option>
+      <option value="illegal">Other illegal content</option>
+      <option value="spam">Spam or bot</option>
+    </select>
+    <label class="field" for="report-details">Additional details (optional)</label>
+    <textarea id="report-details" maxlength="500" placeholder="Describe what happened in your own words…"></textarea>
+    <p class="char" id="report-char-count">0 / 500</p>
+    <label class="check" id="report-attach-row" hidden><input type="checkbox" id="report-attach"> Attach their request message (marked as unverified: we can't check it)</label>
+    <p class="err" id="report-err"></p>
+    <div class="modal-actions">
+      <button class="ghost" id="btn-report-cancel">cancel</button>
+      <button class="btn small danger" id="btn-report-submit">Submit report</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log off: says exactly what gets deleted -->
+<div class="modal" id="modal-logoff" hidden role="dialog" aria-modal="true" aria-labelledby="logoff-title">
+  <div class="modal-box">
+    <h3 class="modal-title" id="logoff-title">Log off and delete everything?</h3>
+    <p>This is deleted from the server right away and can't be undone:</p>
+    <ul class="delete-list" id="logoff-list"></ul>
+    <p>People you were chatting with will see that you logged off.</p>
+    <div class="modal-actions">
+      <button class="ghost" id="btn-logoff-cancel">stay online</button>
+      <button class="btn small danger" id="btn-logoff-ok">Delete and log off</button>
+    </div>
+  </div>
+</div>
+
+<div id="install-ios" class="modal" hidden>
   <div class="modal-box install-box">
-    <h3 class="report-title install-title">Install on iOS</h3>
-    <p class="install-text">Tap the <strong>Share</strong> button, then choose <strong>Add to Home Screen</strong>.</p>
-    <button class="btn btn-ghost" id="btn-install-close">Close</button>
+    <h3 class="modal-title">Install on iOS</h3>
+    <p>Tap the <strong>Share</strong> button, then choose <strong>Add to Home Screen</strong>.</p>
+    <button class="ghost" id="btn-install-close">close</button>
   </div>
 </div>
 
