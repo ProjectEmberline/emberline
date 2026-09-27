@@ -356,7 +356,7 @@ Design constraints, in order: **the user must always know**, then **nobody gets 
 
 - **Relevance = a brighter rim.** People who share two of your interests get `.hi`, three or more `.hi.warm` (a faint ember glow), with a "shares N" label; search results are sorted most-in-common first. Shape and position never change.
 - **Time = a melt line.** Each open request has a 2px `.melt` line along its bottom edge that shrinks over its 10 minutes and turns `--warn` in the last two. Its width is set from JS (the CSP forbids inline `style` attributes).
-- **Ember = warmth.** Ember marks you (your chips, your messages), unread chats and the one main action per screen.
+- **Ember = warmth.** Ember marks you (your chips), unread chats and the one main action per screen. It stays out of chat bubbles: there it was tiring to read.
 - **Tabs** sit on a thin baseline (`--rail`); the open tab is taller, lighter, has an ember top edge and covers the baseline beneath it.
 - **Fields** are grooves cut into the ice (`--groove`, inset shadow), outlined in ember on focus.
 - **Two columns from 960px:** entry (form | how others see you), discover (your interests, popular, AI | search and people), requests (for you | sent), messages (chat list | open chat). Below that everything stacks and a chat takes the whole screen.
@@ -369,9 +369,10 @@ Design constraints, in order: **the user must always know**, then **nobody gets 
 |---|---|---|---|---|
 | Headline (`h1`) | Manrope | 700 | `clamp(3.5rem, 11vw, 8rem)` | uppercase, line-height 0.92, tracking −0.04em, `skewX(-6deg)` from left bottom |
 | Waiting `h2`, policy-page headings | Manrope | 700 | 2rem | uppercase, tracking −0.02em |
-| Body, messages, inputs | Manrope | 300 (400 for emphasis) | 16px body, 19px messages | line-height 1.5 |
+| Body, inputs | Manrope | 400 (500 for emphasis) | 16px | line-height 1.5 |
+| Chat messages | Manrope | 400 | 18px | line-height 1.55, at most 36em (~65 characters) per line |
 | Tag pills, keyword badges, CTA | Manrope | 500 | 0.875rem | uppercase, tracking 0.2–0.3em |
-| Logo, labels, text buttons, footer | Manrope | 300 | 0.6875–1rem | uppercase, tracking 0.2–0.4em |
+| Logo, labels, text buttons, footer | Manrope | 400–500 | 0.6875–1rem | uppercase, tracking 0.2–0.4em |
 | Subtitle, system messages, waiting status | Playfair Display italic | 400 | 1.5rem subtitle | subtitle in `--accent-hover` |
 
 All spacing follows a **4-point grid** (4, 8, 12, 16, 20, 24, 32px).
@@ -384,7 +385,9 @@ Dark is the default when the OS is dark or unknown; light when the OS asks for i
 |---|---|---|
 | `--paper` | `#060d17` | Page background, with a faint `--sky` glow at the top |
 | `--floe` / `--floe-hi` / `--floe-lo` | `#1f3a50 → #15293c` and lighter / darker | Slab surfaces |
-| `--floe-warm` | `--floe` + ember glow | Your messages, unread chats, 3+ shared interests |
+| `--floe-warm` | `--floe` + ember glow | Your interest chips, unread chats, 3+ shared interests |
+| `--bub-them` / `--bub-them-text` | `#2c4c66` / `#e2ecf3` (~7.5:1) | The other person's chat messages: the brighter slab |
+| `--bub-me` / `--msg-me` | `#152a3d` / `#c9dbe7` (~10:1) | Your own chat messages: a darker, quieter slab |
 | `--rim` / `--rim-hi` / `--rim-warm` | `rgba(205,236,250,.32)` … | Lit top edge of a slab |
 | `--ink` | `#dbe9f2` | Body text (~14:1) |
 | `--ink-strong` | `#f2f8fc` | Headline, names, input text |
@@ -401,7 +404,7 @@ The only colours outside the tokens are `.btn.danger` (`#c0392b`, white text ~5.
 
 ### 9.3 Chat Layout
 
-On wide screens the chat opens beside the chat list; on phones and in focus it is alone. Messages are 10px slabs: the other person's (`.msg.them`) left on `--floe` in `--ink`, your own (`.msg.me`) right on `--floe-warm`. Speaker changes get a 16px gap, consecutive messages from the same speaker 6px. When the chat is over (`.chat-over`) messages fade to `--muted`. System messages are centered Playfair italic in `--muted`, without a slab. A thin waterline separates the messages from the input.
+On wide screens the chat opens beside the chat list; on phones and in focus it is alone. Messages are flat 10px slabs in regular weight, because thin light text on dark strains the eyes: the other person's (`.msg.them`, left) are the brighter slab (`--bub-them`) in a soft white, since reading them matters most; your own (`.msg.me`, right) are a darker, quieter slab (`--bub-me`). In light mode theirs are white with a blue edge and yours pale grey-blue. Speaker changes get a 16px gap, consecutive messages from the same speaker 6px. When the chat is over (`.chat-over`) messages fade to `--muted`. System messages are centered Playfair italic in `--muted`, without a slab. A thin waterline separates the messages from the input.
 
 ### 9.4 Buttons
 

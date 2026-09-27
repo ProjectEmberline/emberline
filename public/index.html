@@ -38,7 +38,15 @@
     --accent-soft:  rgba(232,120,52,0.18);
     --ice:          #7fc4ea;     /* typing, melt line */
     --on-accent:    #070c14;     /* text on solid ember */
-    --msg-me:       #fff4ec;
+    --msg-me:       #c9dbe7;     /* your messages: quieter, theirs are what you read */
+    /* chat bubbles, flat for easy reading: theirs a brighter slab of ice, yours a darker one */
+    --bub-them-text: #e2ecf3;     /* softer than pure white: ~7.5:1 on the bubble */
+    --bub-them:      #2c4c66;
+    --bub-them-rim:  rgba(225,244,253,0.45);
+    --bub-them-edge: rgba(205,236,250,0.06);
+    --bub-me:        #152a3d;     /* --msg-me on it ~10:1 */
+    --bub-me-rim:    rgba(205,236,250,0.14);
+    --bub-me-edge:   rgba(205,236,250,0.04);
     --msg-them:     #f0a26b;     /* request messages: ember serif */
     --ok:           #7fd4a8;
     --warn:         #f2c46b;
@@ -80,7 +88,14 @@
     --accent-soft:  rgba(184,83,26,0.14);
     --ice:          #3e88b8;
     --on-accent:    #ffffff;
-    --msg-me:       #12293a;
+    --msg-me:       #2c4658;
+    --bub-them-text: #12293a;
+    --bub-them:      #ffffff;
+    --bub-them-rim:  #ffffff;
+    --bub-them-edge: rgba(62,136,184,0.35);
+    --bub-me:        #e6eef4;
+    --bub-me-rim:    rgba(255,255,255,0.6);
+    --bub-me-edge:   rgba(90,130,160,0.18);
     --msg-them:     #b8531a;
     --ok:           #1f7a4d;
     --warn:         #8a5a00;
@@ -111,7 +126,7 @@
 
   html { height: 100%; background: var(--paper); }
   body {
-    font-family: 'Manrope', system-ui, sans-serif; font-weight: 300; font-size: 16px; line-height: 1.5;
+    font-family: 'Manrope', system-ui, sans-serif; font-weight: 400; font-size: 16px; line-height: 1.5;
     color: var(--ink); background: radial-gradient(80% 45% at 80% -10%, var(--sky), transparent 65%), var(--paper);
     height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
     padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -294,7 +309,7 @@
   .who { flex: 1 1 180px; min-width: 0; }
   .who .top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .who .u { color: var(--ink-strong); font-weight: 500; font-size: 1.0625rem; letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .who .g { font-size: 0.75rem; color: var(--muted); font-weight: 300; margin-left: 8px; letter-spacing: 0.05em; }
+  .who .g { font-size: 0.75rem; color: var(--muted); font-weight: 400; margin-left: 8px; letter-spacing: 0.05em; }
   .who .shares { font-size: 0.625rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--msg-them); font-weight: 500; white-space: nowrap; }
   .who .t { font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 500; line-height: 1.9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cards .who .t { white-space: normal; }
@@ -325,7 +340,7 @@
   .switch input:checked + .track { background: var(--accent); box-shadow: none; }
   .switch input:checked + .track::after { transform: translateX(16px); background: var(--on-accent); }
   .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .switch strong { font-weight: 400; color: var(--ink-strong); display: block; }
+  .switch strong { font-weight: 500; color: var(--ink-strong); display: block; }
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 6px; vertical-align: 1px; }
   .dot.recon { background: var(--warn); animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
@@ -347,14 +362,18 @@
   .ai-banner strong { font-weight: 700; letter-spacing: 0.2em; margin-right: 8px; }
   .chat-box { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 4px 16px; display: flex; flex-direction: column; scrollbar-width: none; }
   .chat-box::-webkit-scrollbar { display: none; }
+  /* Regular weight, roomy lines and at most ~65 characters per line: light text on dark
+     strains the eyes when it is thin or runs long */
   .msg {
-    max-width: 75%; font-size: 1.0625rem; line-height: 1.45; margin-top: 16px; padding: 10px 15px 11px; border-radius: 10px;
+    max-width: min(75%, 36em); font-size: 1.125rem; font-weight: 400; line-height: 1.55; letter-spacing: 0.005em;
+    margin-top: 16px; padding: 11px 16px 12px; border-radius: 10px;
     flex-shrink: 0; white-space: pre-wrap; overflow-wrap: anywhere; transition: color .6s, opacity .6s;
   }
   .msg:first-child { margin-top: 0; }
   .msg.me + .msg.me, .msg.them + .msg.them { margin-top: 6px; }
-  .msg.them { align-self: flex-start; color: var(--ink); background: var(--floe); box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), var(--lift-sm); }
-  .msg.me   { align-self: flex-end; color: var(--msg-me); background: var(--floe-warm); box-shadow: inset 0 1px 0 var(--rim-warm), 0 0 0 1px var(--edge-warm), var(--lift-sm); }
+  /* Theirs are the brighter slab (what you read), yours a darker, quieter one */
+  .msg.them { align-self: flex-start; color: var(--bub-them-text); background: var(--bub-them); box-shadow: inset 0 1px 0 var(--bub-them-rim), 0 0 0 1px var(--bub-them-edge); }
+  .msg.me   { align-self: flex-end; color: var(--msg-me); background: var(--bub-me); box-shadow: inset 0 1px 0 var(--bub-me-rim), 0 0 0 1px var(--bub-me-edge); }
   .chat-over .msg.me, .chat-over .msg.them { color: var(--muted); opacity: .7; }
   /* A message on its way: dim until the server has it or the other person is back */
   .msg.waiting, .msg.failed { opacity: .55; }
@@ -391,7 +410,7 @@
   /* ── Modals ──────────────────────────────────────────────────────────── */
   .modal { position: fixed; inset: 0; background: var(--scrim); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; }
   .modal-box { background: var(--floe); border-radius: 14px; box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), 0 24px 48px rgba(0,0,0,0.4); padding: 24px; max-width: 420px; width: 100%; margin: auto; }
-  .modal-title { font-weight: 300; font-size: 1.25rem; letter-spacing: 0.06em; color: var(--ink-strong); margin-bottom: 8px; overflow-wrap: anywhere; }
+  .modal-title { font-weight: 400; font-size: 1.25rem; letter-spacing: 0.06em; color: var(--ink-strong); margin-bottom: 8px; overflow-wrap: anywhere; }
   .modal p { font-size: 0.875rem; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
   .modal p.lead { color: var(--ink-strong); font-size: 0.9375rem; margin-top: 14px; }
   .modal p.lead b { color: var(--accent); font-weight: 500; }
@@ -411,7 +430,7 @@
   .delete-list li { padding: 3px 0 3px 18px; position: relative; }
   .delete-list li::before { content: '×'; position: absolute; left: 0; color: var(--danger); }
   .install-box { max-width: 360px; text-align: center; }
-  .install-box strong { color: var(--ink); font-weight: 400; }
+  .install-box strong { color: var(--ink); font-weight: 500; }
 
   footer { text-align: center; padding: 12px 24px; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); flex-shrink: 0; }
   footer a { color: var(--muted); text-decoration: none; }
