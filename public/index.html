@@ -22,53 +22,97 @@
   [hidden] { display: none !important; }
 
   /* ── Tokens ─────────────────────────────────────────────────────────────
-     "Action": flat Antarctic night, bold skewed headline left, one ember
-     accent. Light = ice daylight.                                          */
+     "Ice floe": a calm polar night. Every segment is its own slab of ice
+     with a lit top edge (the rim), 14px corners, 10px on chips and
+     messages. Ember marks you, unread and the one action. Light = daylight. */
   :root, [data-theme="dark"] {
     color-scheme: dark;
-    --paper:        #070c14;
+    --paper:        #060d17;
+    --sky:          rgba(127,196,234,0.08);  /* faint glow at the top of the page */
     --ink:          #dbe9f2;     /* body text            ~14:1 on paper */
     --ink-strong:   #f2f8fc;     /* headline, input text */
     --muted:        #8fabbe;     /* labels, placeholders  ~5.5:1 */
     --border:       #3a5a74;
     --accent:       #e87834;     /* ember: you, send, CTA  ~5.2:1 */
     --accent-hover: #ffb070;
-    --accent-soft:  rgba(232,120,52,0.14);
-    --ice:          #7fc4ea;     /* stranger's pulse, secondary */
+    --accent-soft:  rgba(232,120,52,0.18);
+    --ice:          #7fc4ea;     /* typing, melt line */
     --on-accent:    #070c14;     /* text on solid ember */
-    --surface:      #0b1522;     /* modal */
-    --msg-me:       #e6f0f6;     /* you: white */
-    --msg-them:     #f0a26b;     /* the other person: ember */
+    --msg-me:       #fff4ec;
+    --msg-them:     #f0a26b;     /* request messages: ember serif */
     --ok:           #7fd4a8;
     --warn:         #f2c46b;
     --danger:       #ff8a7a;
-    --row:          rgba(255,255,255,0.03);
+    --row:          rgba(127,196,234,0.06);
+    /* floes */
+    --floe:       linear-gradient(180deg, #1f3a50 0%, #15293c 100%);
+    --floe-hi:    linear-gradient(180deg, #24435b 0%, #172d41 100%);
+    --floe-lo:    linear-gradient(180deg, #172e42 0%, #112335 100%);
+    --floe-warm:  radial-gradient(70% 100% at 0% 100%, rgba(232,120,52,0.13), transparent 65%), linear-gradient(180deg, #22405a 0%, #162c40 100%);
+    --surface:    #15293c;     /* modal, solid floe colour */
+    --rim:        rgba(205,236,250,0.32);
+    --rim-hi:     rgba(220,242,252,0.6);
+    --rim-lo:     rgba(205,236,250,0.16);
+    --rim-warm:   rgba(255,190,140,0.6);
+    --edge:       rgba(205,236,250,0.04);
+    --edge-warm:  rgba(232,120,52,0.18);
+    --lift:       0 10px 16px rgba(0,0,0,0.4);
+    --lift-hi:    0 14px 20px rgba(0,0,0,0.45);
+    --lift-sm:    0 4px 8px rgba(0,0,0,0.25);
+    --groove:     #08131f;
+    --groove-in:  inset 0 2px 5px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(58,90,116,0.55);
+    --rail:       rgba(127,196,234,0.24);
+    --tab:        #0d1c2b;
+    --tab-on:     linear-gradient(180deg, #22405a, #172d41);
+    --tab-on-end: #172d41;
+    --scrim:      rgba(4,8,14,0.72);
   }
   [data-theme="light"] {
     color-scheme: light;
-    --paper:        #f6f9fb;
+    --paper:        #f2f7fa;
+    --sky:          rgba(255,255,255,0.9);
     --ink:          #1c3242;
-    --ink-strong:   #1c3242;
+    --ink-strong:   #12293a;
     --muted:        #5b7587;
     --border:       #9fbccd;
-    --accent:       #3e88b8;     /* glacial */
-    --accent-hover: #2b6a94;
-    --on-accent:    #f6f9fb;
-    --accent-soft:  rgba(62,136,184,0.12);
+    --accent:       #b8531a;     /* ember in daylight, white text ~4.9:1 */
+    --accent-hover: #9a4413;
+    --accent-soft:  rgba(184,83,26,0.14);
     --ice:          #3e88b8;
-    --surface:      #edf3f7;
-    --msg-me:       #1c3242;
-    --msg-them:     #3e88b8;
+    --on-accent:    #ffffff;
+    --msg-me:       #12293a;
+    --msg-them:     #b8531a;
     --ok:           #1f7a4d;
     --warn:         #8a5a00;
     --danger:       #b3261e;
-    --row:          rgba(0,0,0,0.03);
+    --row:          rgba(62,136,184,0.08);
+    --floe:       linear-gradient(180deg, #ffffff 0%, #f2f7fa 100%);
+    --floe-hi:    linear-gradient(180deg, #ffffff 0%, #eef5fa 100%);
+    --floe-lo:    linear-gradient(180deg, #f7fafc 0%, #ebf2f7 100%);
+    --floe-warm:  radial-gradient(70% 100% at 0% 100%, rgba(232,120,52,0.08), transparent 65%), linear-gradient(180deg, #ffffff 0%, #f7f5f2 100%);
+    --surface:    #ffffff;
+    --rim:        #ffffff;
+    --rim-hi:     #ffffff;
+    --rim-lo:     #ffffff;
+    --rim-warm:   #ffffff;
+    --edge:       rgba(90,130,160,0.25);
+    --edge-warm:  rgba(184,83,26,0.4);
+    --lift:       0 6px 12px rgba(40,80,110,0.1);
+    --lift-hi:    0 8px 16px rgba(40,80,110,0.14);
+    --lift-sm:    0 2px 6px rgba(40,80,110,0.08);
+    --groove:     #e8f0f5;
+    --groove-in:  inset 0 1px 3px rgba(40,80,110,0.15), inset 0 0 0 1px #c3d6e2;
+    --rail:       rgba(62,136,184,0.3);
+    --tab:        #e3edf3;
+    --tab-on:     linear-gradient(180deg, #ffffff, #f4f8fb);
+    --tab-on-end: #f4f8fb;
+    --scrim:      rgba(28,50,66,0.4);
   }
 
   html { height: 100%; background: var(--paper); }
   body {
     font-family: 'Manrope', system-ui, sans-serif; font-weight: 300; font-size: 16px; line-height: 1.5;
-    color: var(--ink); background: var(--paper);
+    color: var(--ink); background: radial-gradient(80% 45% at 80% -10%, var(--sky), transparent 65%), var(--paper);
     height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
     padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -76,8 +120,22 @@
   button { cursor: pointer; background: none; border: 0; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  /* A floe: one slab, lit along its top edge. Relevance = a brighter rim. */
+  .floe, .cards .person, .chatlist .person, .preview .person, .req {
+    background: var(--floe); border-radius: 14px;
+    box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), var(--lift);
+  }
+  .floe.hi, .cards .person.hi, .preview .person { background: var(--floe-hi); box-shadow: inset 0 1px 0 var(--rim-hi), 0 0 0 1px var(--edge), var(--lift-hi); }
+  .floe.lo, .ai-card { background: var(--floe-lo); box-shadow: inset 0 1px 0 var(--rim-lo), 0 0 0 1px var(--edge), var(--lift-sm); }
+  .cards .person.warm, .chatlist .person.warm, .preview .person { background: var(--floe-warm); box-shadow: inset 0 1px 0 var(--rim-warm), 0 0 0 1px var(--edge-warm), var(--lift-hi); }
+  .waterline { height: 1px; background: linear-gradient(90deg, transparent, var(--rail) 12%, var(--rail) 88%, transparent); }
+
   header { padding: 20px 32px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-shrink: 0; }
-  .logo { font-size: 1rem; letter-spacing: 0.4em; text-transform: uppercase; color: var(--ink-strong); white-space: nowrap; }
+  .logo { font-size: 1rem; letter-spacing: 0.4em; text-transform: uppercase; color: var(--ink-strong); white-space: nowrap; display: flex; align-items: center; }
+  .beta {
+    margin-left: 12px; padding: 3px 8px 2px; border: 1px solid var(--accent); border-radius: 999px;
+    color: var(--msg-them); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.22em; line-height: 1.2;
+  }
   .header-right { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .tagline { font-size: 0.75rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tagline .me-name { text-transform: none; letter-spacing: 0.05em; color: var(--ink); }
@@ -89,13 +147,13 @@
   #btn-theme:hover { border-color: var(--accent); color: var(--accent); }
   .logoff {
     font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--danger);
-    border: 1px solid var(--danger); border-radius: 4px; padding: 7px 12px; white-space: nowrap; flex-shrink: 0;
+    border: 1px solid var(--danger); border-radius: 8px; padding: 7px 12px; white-space: nowrap; flex-shrink: 0;
   }
   .logoff:hover { background: var(--row); }
 
-  main { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; display: flex; justify-content: center; }
-  .card { width: 100%; max-width: 720px; display: flex; flex-direction: column; }
-  body.is-chat main { overflow: hidden; padding: 12px 24px; }
+  main { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 32px; display: flex; justify-content: center; }
+  .card { width: 100%; max-width: 1152px; display: flex; flex-direction: column; }
+  body.is-chat main { overflow: hidden; padding: 20px 32px 12px; }
   body.is-chat footer { display: none; }
 
   /* ── Type ─────────────────────────────────────────────────────────────── */
@@ -103,9 +161,9 @@
     font-weight: 700; font-size: clamp(3rem, 10vw, 6.5rem); line-height: 0.92; letter-spacing: -0.04em;
     text-transform: uppercase; color: var(--ink-strong); transform: skewX(-6deg); transform-origin: left bottom;
   }
-  p.sub { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.375rem; color: var(--accent-hover); }
+  p.sub { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.375rem; color: var(--msg-them); }
   .serif { font-family: 'Playfair Display', Georgia, serif; font-style: italic; }
-  .label { display: block; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .label { display: block; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; font-weight: 500; }
   .trust { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); line-height: 2; }
   .hint { font-size: 0.8125rem; color: var(--muted); }
   .err { font-size: 0.8125rem; color: var(--danger); margin-top: 6px; }
@@ -113,65 +171,65 @@
   .link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; font-size: 0.8125rem; }
   .ok-text { color: var(--ok); } .warn-text { color: var(--warn); }
 
-  /* ── Entry ───────────────────────────────────────────────────────────── */
-  .form { display: flex; flex-direction: column; gap: 26px; padding-bottom: 24px; }
-  .line-input {
-    width: 100%; border: 0; border-bottom: 1px solid var(--border); background: transparent; outline: none;
-    font-size: 1.375rem; letter-spacing: 0.04em; color: var(--ink-strong); padding: 10px 0; transition: border-color .2s;
-  }
-  .line-input:focus { border-color: var(--accent); }
-  /* Placeholders read as hints, not as something already filled in */
-  .line-input::placeholder, .tag-field input::placeholder { color: var(--muted); opacity: .7; font-style: italic; letter-spacing: 0.02em; }
-  .line-input.small { font-size: 1.125rem; }
-  .tag-field { width: 100%; min-height: 48px; padding: 8px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: text; }
+  /* ── Fields: grooves cut into the ice ───────────────────────────────────── */
+  .groove, .tag-field, .search-row { background: var(--groove); box-shadow: var(--groove-in); border-radius: 12px; }
+  .tag-field { width: 100%; min-height: 54px; padding: 8px 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: text; }
+  .tag-field:focus-within, .search-row:focus-within { box-shadow: var(--groove-in), 0 0 0 1px var(--accent); }
   #tag-list { display: contents; }  /* pills and the input share one wrapping row */
-  .tag-field input {
-    border: 0; border-bottom: 1px solid var(--border); background: transparent; outline: none;
-    font-size: 1.375rem; letter-spacing: 0.08em; color: var(--ink-strong); flex: 1; min-width: 160px; max-width: 520px; padding: 10px 0; transition: border-color .2s;
+  .tag-field input, .search-row input {
+    border: 0; background: transparent; outline: none; flex: 1; min-width: 140px; padding: 6px 6px;
+    font-size: 1.125rem; letter-spacing: 0.04em; color: var(--ink-strong);
   }
-  .tag-field input:focus { border-color: var(--accent); }
+  .tag-field input::placeholder, .search-row input::placeholder { color: var(--muted); opacity: .8; font-style: italic; letter-spacing: 0.02em; }
+  .search-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 16px; margin-bottom: 28px; }
+  .search-row svg { flex: none; color: var(--muted); }
   #hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
   .tag-pill {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; font-weight: 500; letter-spacing: 0.2em;
-    text-transform: uppercase; padding: 8px 14px; border-radius: 4px; background: var(--accent); color: var(--on-accent); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.18em;
+    text-transform: uppercase; padding: 7px 12px; border-radius: 10px; background: var(--accent); color: var(--on-accent); white-space: nowrap;
   }
   .tag-pill button { color: var(--on-accent); opacity: .7; font-size: 1rem; line-height: 1; }
   .tag-pill button:hover { opacity: 1; }
   .tag-pill.name-pill { text-transform: none; letter-spacing: 0.05em; font-size: 1rem; } /* names keep their case */
   .choice {
-    font-size: 0.6875rem; letter-spacing: 0.15em; text-transform: uppercase; padding: 5px 9px; border-radius: 4px;
-    box-shadow: inset 0 0 0 1px var(--border); color: var(--ink);
+    font-size: 0.6875rem; letter-spacing: 0.15em; text-transform: uppercase; padding: 7px 11px; border-radius: 10px; font-weight: 500;
+    background: var(--floe); color: var(--ink); box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), var(--lift-sm);
   }
-  .choice[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: none; font-weight: 500; }
+  .choice[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: none; }
   .choices { display: flex; flex-wrap: wrap; gap: 8px; }
-  .preview { border: 1px dashed var(--border); border-radius: 4px; padding: 0 14px; }
-  .preview .person { border: 0; }
-  .preview .is-sample { opacity: .6; font-style: italic; } /* stand-in text until something is typed */
-  .notice { border-left: 2px solid var(--accent); padding: 8px 14px; font-size: 0.875rem; color: var(--muted); }
-  .temporary { border-left: 2px solid var(--accent); padding: 4px 0 4px 14px; }
-  .temporary .label { color: var(--accent); margin-bottom: 8px; }
-  .temporary ul { list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; color: var(--ink); }
-  .temporary li { padding-left: 16px; position: relative; }
-  .temporary li::before { content: '·'; position: absolute; left: 4px; color: var(--accent); font-weight: 700; }
   .check { display: flex; gap: 10px; align-items: center; font-size: 0.875rem; color: var(--muted); }
   .check input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
   .check a { color: inherit; text-underline-offset: 3px; }
-  .handover { border: 1px solid var(--accent); border-radius: 4px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+  .handover { border: 1px solid var(--accent); border-radius: 12px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+
+  /* ── Entry: form on the left, how others see you on the right ─────────── */
+  .entry { display: grid; gap: 26px; padding-bottom: 24px; align-items: start; }
+  .e-head, .e-go, .e-aside { display: flex; flex-direction: column; gap: 16px; }
+  .e-head { gap: 12px; }
+  .e-fields { display: flex; flex-direction: column; gap: 24px; padding: 28px 30px 30px; }
+  .preview .is-sample { opacity: .6; font-style: italic; } /* stand-in text until something is typed */
+  .temporary { padding: 24px 26px 26px; }
+  .temporary .label { color: var(--ice); margin-bottom: 12px; }
+  .temporary ul { list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 0.875rem; color: var(--ink); }
+  .temporary li { padding-left: 16px; position: relative; }
+  .temporary li::before { content: '·'; position: absolute; left: 4px; color: var(--accent); font-weight: 700; }
+  .e-aside .waterline { margin: 18px 0; }
+  .form { display: flex; flex-direction: column; gap: 26px; padding-bottom: 24px; max-width: 720px; }
 
   /* ── Buttons ─────────────────────────────────────────────────────────── */
   .btn {
-    font-size: 0.875rem; font-weight: 500; letter-spacing: 0.3em; text-transform: uppercase;
-    height: 48px; padding: 0 40px; background: var(--accent); color: var(--on-accent);
-    border-radius: 4px; transform: skewX(-6deg); white-space: nowrap;
-    box-shadow: 0 0 36px var(--accent-soft); transition: background .2s, box-shadow .2s;
+    font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.28em; text-transform: uppercase;
+    height: 48px; padding: 0 34px; background: var(--accent); color: var(--on-accent);
+    border-radius: 10px; white-space: nowrap;
+    box-shadow: 0 0 24px var(--accent-soft); transition: background .2s, box-shadow .2s;
   }
-  .btn:hover { background: var(--accent-hover); box-shadow: 0 0 44px var(--accent-soft); }
+  .btn:hover { background: var(--accent-hover); }
   .btn:disabled { background: var(--border); color: var(--muted); box-shadow: none; cursor: not-allowed; }
-  .btn.small { height: 38px; padding: 0 18px; font-size: 0.75rem; letter-spacing: 0.2em; transform: none; }
+  .btn.small { height: 38px; padding: 0 18px; font-size: 0.6875rem; letter-spacing: 0.2em; box-shadow: none; }
   .btn.danger { background: #c0392b; color: #fff; box-shadow: none; }  /* ~5.4:1 */
   .btn.danger:hover { background: #a93226; }
   .btn.dim { opacity: .45; }
-  .ghost { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); padding: 0 8px; height: 40px; white-space: nowrap; }
+  .ghost { font-size: 0.75rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); padding: 0 8px; height: 40px; white-space: nowrap; font-weight: 500; }
   .ghost:hover { color: var(--ink); }
   .ghost.accent { color: var(--accent); }
   .ghost.accent:hover { color: var(--accent-hover); }
@@ -179,56 +237,88 @@
   .ghost.done { color: var(--border); cursor: default; }
   .ghost.first { padding-left: 0; }
 
-  /* ── Live area ───────────────────────────────────────────────────────── */
-  .tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--border); margin-bottom: 22px; }
-  .tab { padding: 10px 0; font-size: 0.75rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid transparent; margin-bottom: -1px; display: flex; gap: 8px; align-items: center; }
-  .tab[aria-selected="true"] { color: var(--ink-strong); border-bottom-color: var(--accent); }
-  .badge { background: var(--accent); color: var(--on-accent); font-size: 0.6875rem; letter-spacing: 0; border-radius: 9px; padding: 0 6px; font-weight: 500; }
+  /* ── Tabs: on a baseline; the open one is taller and joins it ─────────── */
+  .tabs { display: flex; gap: 4px; align-items: flex-end; border-bottom: 1px solid var(--rail); padding-left: 4px; margin-bottom: 28px; flex-shrink: 0; }
+  .tab {
+    height: 42px; padding: 0 22px; margin-bottom: -1px; border-radius: 12px 12px 0 0; display: flex; gap: 10px; align-items: center;
+    background: var(--tab); color: var(--muted); font-size: 0.75rem; letter-spacing: 0.24em; text-transform: uppercase; font-weight: 500;
+    box-shadow: inset 0 1px 0 var(--edge), inset 1px 0 0 var(--edge), inset -1px 0 0 var(--edge);
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] {
+    height: 50px; color: var(--ink-strong); background: var(--tab-on);
+    box-shadow: inset 0 2px 0 var(--accent), inset 1px 0 0 var(--rail), inset -1px 0 0 var(--rail), 0 1px 0 var(--tab-on-end);
+  }
+  .badge { background: var(--accent); color: var(--on-accent); font-size: 0.6875rem; letter-spacing: 0; border-radius: 9px; padding: 0 7px; font-weight: 700; line-height: 18px; }
   .badge:empty { display: none; }
-  .note { font-size: 0.875rem; color: var(--ink); border-left: 2px solid var(--accent); padding: 6px 12px; margin: -8px 0 16px; background: var(--row); }
+  .note { font-size: 0.875rem; color: var(--ink); border-radius: 10px; padding: 8px 14px; margin: -12px 0 18px; background: var(--row); }
   .note:empty { display: none; }
-  .banner { display: flex; gap: 10px; align-items: center; padding: 10px 14px; font-size: 0.875rem; border-left: 2px solid var(--warn); background: var(--row); margin-bottom: 16px; flex-wrap: wrap; }
+  .banner { display: flex; gap: 10px; align-items: center; padding: 10px 14px; font-size: 0.875rem; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--warn); background: var(--row); margin-bottom: 16px; flex-wrap: wrap; }
   .banner:empty { display: none; }
-  .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 22px 0 8px; }
+  .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 28px 0 14px; }
   .meta.first { margin-top: 0; }
   .meta .label { margin: 0; }
+  .meta .label em { font-style: normal; color: var(--msg-them); }
   .tick { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
   .tick i { width: 36px; height: 1px; background: var(--border); position: relative; overflow: hidden; }
   .tick i::after { content: ''; position: absolute; inset: 0; background: var(--accent); transform-origin: left; animation: fill 5s linear infinite; }
   @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip {
-    display: inline-flex; align-items: baseline; gap: 8px; font-size: 0.8125rem; letter-spacing: 0.15em; text-transform: uppercase;
-    padding: 7px 12px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--border); color: var(--ink); transition: background .6s;
-  }
-  .chip:hover { box-shadow: inset 0 0 0 1px var(--accent); }
-  .chip .n { font-size: 0.6875rem; letter-spacing: 0.05em; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .chip.sel { background: var(--accent); color: var(--on-accent); box-shadow: none; font-weight: 500; }
-  .chip.sel .n { color: var(--on-accent); }
-  .chip.flash { background: var(--accent-soft); }
-  .search-row { margin-top: 18px; }
-  .ai-card { border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; margin-top: 22px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
-  .ai-card b { font-weight: 700; letter-spacing: 0.2em; color: var(--accent); margin-right: 6px; }
 
-  .person { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--border); }
+  /* Interest chips, sized by how many people are online with them */
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: baseline; gap: 8px; font-size: 0.75rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500;
+    padding: 8px 13px; border-radius: 10px; background: var(--floe); color: var(--ink);
+    box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), var(--lift-sm); transition: background .6s;
+  }
+  .chip:hover { box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--accent); }
+  .chip .n { font-size: 0.625rem; letter-spacing: 0.04em; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .chip.z1 { font-size: 0.6875rem; }
+  .chip.z3 { font-size: 0.8125rem; }
+  .chip.z4 { font-size: 0.875rem; padding: 10px 15px; }
+  .chip.z5 { font-size: 0.9375rem; padding: 11px 17px; }
+  .chip.mine { background: var(--floe-warm); box-shadow: inset 0 1px 0 var(--rim-warm), 0 0 0 1px var(--edge-warm), var(--lift-sm); }
+  .chip.sel { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+  .chip.sel .n { color: var(--on-accent); opacity: .75; }
+  .chip.flash { background: var(--accent-soft); }
+  .ai-card { border-radius: 14px; padding: 18px 20px 12px; margin-top: 28px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .ai-card b { font-weight: 700; letter-spacing: 0.2em; color: var(--ink-strong); margin-right: 10px; }
+  .ai-card .ghost { padding-left: 0; }
+
+  /* People: cards in a grid */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .person { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 14px; }
+  .cards .person, .chatlist .person, .preview .person { padding: 16px 18px 12px; }
   .person.gone { opacity: .5; }
   .person.clickable { cursor: pointer; }
-  .who { flex: 1; min-width: 0; }
-  .who .u { color: var(--ink-strong); font-weight: 500; letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who { flex: 1 1 180px; min-width: 0; }
+  .who .top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .who .u { color: var(--ink-strong); font-weight: 500; font-size: 1.0625rem; letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .who .g { font-size: 0.75rem; color: var(--muted); font-weight: 300; margin-left: 8px; letter-spacing: 0.05em; }
-  .who .t { font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .who .t b { color: var(--accent); font-weight: 500; }
+  .who .shares { font-size: 0.625rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--msg-them); font-weight: 500; white-space: nowrap; }
+  .who .t { font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 500; line-height: 1.9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cards .who .t { white-space: normal; }
+  .who .t b { color: var(--msg-them); font-weight: 700; }
   .who .t .on { color: var(--ok); } .who .t .recon { color: var(--warn); }
-  .acts { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-  .req { border-top: 1px solid var(--border); padding: 16px 0; }
-  .req .person { border: 0; padding: 0 0 8px; }
-  .req .acts { justify-content: flex-start; margin-left: -8px; }
+  .chatlist .shares { display: none; }
+  .acts { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+  .cards .acts .ghost:last-child { padding-right: 0; }
+
+  /* Requests: a thin melt line along the bottom edge shrinks as time runs out */
+  .req { position: relative; padding: 20px 24px 16px; margin-bottom: 16px; }
+  .req .person { padding: 0 0 4px; }
+  .req .acts { justify-content: flex-start; margin: 6px 0 0 0; }
+  .req .acts .btn { margin-right: 10px; }
+  .req .acts .push { margin-left: auto; }
   .req.gone { opacity: .5; }
-  .message { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.1875rem; color: var(--msg-them); border-left: 2px solid var(--accent); padding: 2px 0 2px 14px; margin: 4px 0 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
-  .message.mine { color: var(--msg-me); border-left-color: var(--border); font-size: 1rem; }
+  .melt { position: absolute; left: 14px; right: 14px; bottom: 0; height: 2px; background: var(--row); }
+  .melt i { display: block; height: 100%; width: 0; background: var(--ice); transition: width .6s; }
+  .melt.late i { background: var(--warn); }
+  .message { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.1875rem; line-height: 1.45; color: var(--msg-them); margin: 8px 0 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .message.mine { color: var(--ink); font-size: 1.0625rem; }
   .when { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
-  .empty { padding: 14px 0; border-top: 1px solid var(--border); font-size: 0.8125rem; color: var(--muted); }
-  .switch { display: flex; gap: 14px; align-items: center; cursor: pointer; padding: 4px 0 18px; }
+  .empty { padding: 4px 0 8px; font-size: 0.875rem; color: var(--muted); }
+  .switch { display: flex; gap: 14px; align-items: center; cursor: pointer; padding: 0 0 24px; }
   .switch input { position: absolute; opacity: 0; }
   .track { width: 38px; height: 22px; border-radius: 11px; box-shadow: inset 0 0 0 1px var(--border); position: relative; flex: none; transition: background .2s; }
   .track::after { content: ''; position: absolute; top: 4px; left: 4px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform .2s, background .2s; }
@@ -240,21 +330,32 @@
   .dot.recon { background: var(--warn); animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
 
+  /* Messages tab: the list, and room on the right where a chat opens */
+  .chatlist { display: flex; flex-direction: column; gap: 12px; }
+  .chatlist .person.open { background: var(--floe-hi); box-shadow: inset 0 1px 0 var(--rim-hi), 0 0 0 1px var(--accent), var(--lift-hi); }
+  .split-empty { display: none; }
+
   /* ── Chat ────────────────────────────────────────────────────────────── */
-  #view-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; max-width: 640px; width: 100%; margin: 0 auto; }
-  .chat-head { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .e2e { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
-  .ai-banner { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); font-size: 0.8125rem; line-height: 1.4; text-align: center; flex-shrink: 0; }
+  #view-chat { flex: 1; min-height: 0; display: flex; gap: 48px; }
+  #view-chat .chatlist { display: none; }
+  .chat-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .chat-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; flex-shrink: 0; }
+  .chat-head .who .t { white-space: normal; }
+  .e2e { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  #btn-focus { display: none; color: var(--ink); align-items: center; gap: 8px; }
+  .ai-banner { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); font-size: 0.8125rem; line-height: 1.4; text-align: center; flex-shrink: 0; }
   .ai-banner strong { font-weight: 700; letter-spacing: 0.2em; margin-right: 8px; }
-  .chat-box { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 0; display: flex; flex-direction: column; scrollbar-width: none; }
+  .chat-box { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 4px 16px; display: flex; flex-direction: column; scrollbar-width: none; }
   .chat-box::-webkit-scrollbar { display: none; }
-  .msg { max-width: 85%; font-size: 1.1875rem; line-height: 1.5; margin-top: 36px; flex-shrink: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg {
+    max-width: 75%; font-size: 1.0625rem; line-height: 1.45; margin-top: 16px; padding: 10px 15px 11px; border-radius: 10px;
+    flex-shrink: 0; white-space: pre-wrap; overflow-wrap: anywhere; transition: color .6s, opacity .6s;
+  }
   .msg:first-child { margin-top: 0; }
   .msg.me + .msg.me, .msg.them + .msg.them { margin-top: 6px; }
-  .msg.them { align-self: flex-start; text-align: left; color: var(--msg-them); }
-  .msg.me   { align-self: flex-end;   text-align: right; color: var(--msg-me); }
-  .msg.me, .msg.them { transition: color .6s; }
-  .chat-over .msg.me, .chat-over .msg.them { color: var(--muted); }
+  .msg.them { align-self: flex-start; color: var(--ink); background: var(--floe); box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), var(--lift-sm); }
+  .msg.me   { align-self: flex-end; color: var(--msg-me); background: var(--floe-warm); box-shadow: inset 0 1px 0 var(--rim-warm), 0 0 0 1px var(--edge-warm), var(--lift-sm); }
+  .chat-over .msg.me, .chat-over .msg.them { color: var(--muted); opacity: .7; }
   /* A message on its way: dim until the server has it or the other person is back */
   .msg.waiting, .msg.failed { opacity: .55; }
   .msg.sending { animation: msg-dim .2s 1.2s forwards; } /* only noticeable if it takes a while */
@@ -262,45 +363,46 @@
   .msg-status { display: block; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
   .msg.failed .msg-status { color: var(--danger); }
   .msg.system {
-    align-self: center; text-align: center; max-width: 100%; margin: 0 0 8px;
-    font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.0625rem; color: var(--muted);
+    align-self: center; text-align: center; max-width: 100%; margin: 0 0 8px; padding: 0; background: none; box-shadow: none;
+    font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1rem; color: var(--muted);
   }
   .msg.system:not(:first-child) { margin-top: 24px; }
   @keyframes typing-fade { 0%,100%{opacity:.3} 50%{opacity:.9} }
-  .typing-indicator { font-size: 0.8125rem; color: var(--ice); letter-spacing: 0.3em; margin-top: 24px; animation: typing-fade 2s ease-in-out infinite; flex-shrink: 0; }
-  .chat-input-row { display: flex; gap: 12px; align-items: flex-end; border-bottom: 1px solid var(--border); transition: border-color .2s; flex-shrink: 0; }
-  .chat-input-row:focus-within { border-color: var(--accent); }
+  .typing-indicator { font-size: 0.8125rem; color: var(--ice); letter-spacing: 0.3em; margin-top: 18px; animation: typing-fade 2s ease-in-out infinite; flex-shrink: 0; }
+  .chat-col > .waterline { flex-shrink: 0; margin-bottom: 14px; }
+  .chat-input-row { display: flex; gap: 12px; align-items: flex-end; flex-shrink: 0; }
   .chat-input-row textarea {
-    flex: 1; padding: 10px 0; border: 0; background: transparent; outline: none; resize: none; overflow: hidden;
-    font-size: 1.125rem; line-height: 1.5; color: var(--ink-strong); min-height: 0; max-height: 200px;
+    flex: 1; min-width: 0; padding: 13px 16px; border: 0; outline: none; resize: none; overflow: hidden; border-radius: 12px;
+    background: var(--groove); box-shadow: var(--groove-in);
+    font-size: 1.0625rem; line-height: 1.5; color: var(--ink-strong); min-height: 0; max-height: 200px;
   }
-  .chat-input-row textarea.at-height-limit { overflow-y: auto; scrollbar-width: none; }
-  .chat-input-row:has(textarea.at-height-limit) { border-color: var(--accent); }
-  .chat-input-row textarea::placeholder { color: var(--muted); }
-  .chat-char-count { font-size: 0.6875rem; letter-spacing: 0.1em; color: var(--muted); opacity: 0; transition: opacity .2s; flex-shrink: 0; white-space: nowrap; padding-bottom: 14px; }
+  .chat-input-row textarea:focus { box-shadow: var(--groove-in), 0 0 0 1px var(--accent); }
+  .chat-input-row textarea.at-height-limit { overflow-y: auto; scrollbar-width: none; box-shadow: var(--groove-in), 0 0 0 1px var(--accent); }
+  .chat-input-row textarea::placeholder { color: var(--muted); font-style: italic; }
+  .chat-char-count { font-size: 0.6875rem; letter-spacing: 0.1em; color: var(--muted); opacity: 0; transition: opacity .2s; flex-shrink: 0; white-space: nowrap; padding-bottom: 16px; }
   .chat-char-count.visible { opacity: 1; }
   .chat-char-count.urgent { color: var(--accent); }
-  .send { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; height: 44px; padding: 0 4px; color: var(--accent); transition: color .2s; }
-  .send:hover { color: var(--accent-hover); }
+  .send { height: 50px; padding: 0 20px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; transition: background .2s; flex-shrink: 0; }
+  .send:hover { background: var(--accent-hover); }
   .chat-closed { text-align: center; padding: 10px 0; flex-shrink: 0; }
   .chat-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; flex-shrink: 0; }
   .chat-actions .note { margin: 8px 0 0; }
 
   /* ── Modals ──────────────────────────────────────────────────────────── */
-  .modal { position: fixed; inset: 0; background: rgba(4,8,14,0.72); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; max-width: 420px; width: 100%; margin: auto; }
+  .modal { position: fixed; inset: 0; background: var(--scrim); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .modal-box { background: var(--floe); border-radius: 14px; box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), 0 24px 48px rgba(0,0,0,0.4); padding: 24px; max-width: 420px; width: 100%; margin: auto; }
   .modal-title { font-weight: 300; font-size: 1.25rem; letter-spacing: 0.06em; color: var(--ink-strong); margin-bottom: 8px; overflow-wrap: anywhere; }
   .modal p { font-size: 0.875rem; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
   .modal p.lead { color: var(--ink-strong); font-size: 0.9375rem; margin-top: 14px; }
   .modal p.lead b { color: var(--accent); font-weight: 500; }
   .modal label.field { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); display: block; margin: 16px 0 4px; }
   .modal select, .modal textarea {
-    width: 100%; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+    width: 100%; background: var(--groove); color: var(--ink); border: 0; box-shadow: var(--groove-in); border-radius: 10px; padding: 10px 12px;
     font-size: 0.9375rem; outline: none;
   }
   .modal select { margin-top: 8px; }
   .modal textarea { line-height: 1.5; resize: vertical; min-height: 88px; }
-  .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
+  .modal select:focus, .modal textarea:focus { box-shadow: var(--groove-in), 0 0 0 1px var(--accent); }
   .modal .counter { font-size: 0.8125rem; margin-top: 6px; }
   .modal .char { font-size: 0.6875rem; color: var(--muted); margin: 4px 0 12px; text-align: right; }
   .modal .check { margin-top: 12px; }
@@ -320,24 +422,51 @@
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   .fade { animation: fadeIn .15s ease; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* ── Wide screens: two columns ───────────────────────────────────────── */
+  @media (min-width: 960px) {
+    .entry {
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); column-gap: 72px;
+      grid-template-areas: "head aside" "fields aside" "go aside"; grid-template-rows: auto auto 1fr;
+    }
+    .e-head { grid-area: head; } .e-fields { grid-area: fields; } .e-go { grid-area: go; } .e-aside { grid-area: aside; padding-top: 40px; }
+    .disc { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 56px; align-items: start; }
+    .req-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+    .req-cols .meta.first { margin-top: 0; }
+    .split { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 48px; align-items: start; }
+    .split-empty { display: block; padding-top: 40px; text-align: center; color: var(--muted); font-size: 1.0625rem; }
+    /* The chat opens beside the list; focus hides the list and the tabs */
+    body.is-chat #view-chat .chatlist { display: flex; width: 330px; flex-shrink: 0; overflow-y: auto; padding: 2px 4px 24px; scrollbar-width: none; }
+    #btn-focus { display: flex; }
+    body.is-chat.focus #view-chat .chatlist, body.is-chat.focus .tabs { display: none; }
+    body.is-chat.focus .chat-col { max-width: 800px; margin: 0 auto; }
+  }
+  @media (max-width: 959px) {
+    .req-cols > div + div .meta.first { margin-top: 28px; }
+    body.is-chat .tabs { display: none; }
+  }
   @media (max-width: 480px) {
     header { padding: 16px 16px 0; }
-    .logo { letter-spacing: 0.25em; }
+    .logo { letter-spacing: 0.2em; font-size: 0.875rem; }
+    .beta { margin-left: 8px; padding: 2px 6px 1px; font-size: 0.5625rem; letter-spacing: 0.16em; }
     .tagline { display: none; }
-    main { padding: 16px; }
-    body.is-chat main { padding: 8px 16px; }
+    main { padding: 20px 16px; }
+    body.is-chat main { padding: 12px 16px 8px; }
     .logoff { padding: 4px 10px; line-height: 1.35; letter-spacing: 0.15em; }
     .logoff .sep { display: none; } .logoff .l2 { display: block; }
-    .tabs { gap: 16px; } .tab { letter-spacing: 0.15em; }
-    .person { flex-wrap: wrap; } .person .acts { width: 100%; justify-content: flex-start; margin-left: -8px; }
-    .msg { max-width: 92%; }
+    .tab { padding: 0 12px; letter-spacing: 0.14em; font-size: 0.6875rem; }
+    .e-fields { padding: 22px 18px 24px; }
+    .cards { grid-template-columns: minmax(0, 1fr); }
+    .req { padding: 18px 18px 14px; }
+    .msg { max-width: 88%; }
+    .e2e span { display: none; }
   }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">Emberline.ch</div>
+  <div class="logo">Emberline.ch<span class="beta">beta</span></div>
   <div class="header-right">
     <div class="tagline" id="tagline">— embers are sparkling</div>
     <button class="logoff" id="btn-logoff" hidden title="Log off and delete your profile, requests and chats">log off<span class="sep"> · </span><span class="l2">delete all</span></button>
@@ -348,108 +477,133 @@
 <main>
   <div class="card">
 
+    <div class="tabs" id="tabs" role="tablist" hidden>
+      <button class="tab" role="tab" id="tab-discover" aria-selected="true">discover</button>
+      <button class="tab" role="tab" id="tab-requests" aria-selected="false">requests <span class="badge" id="badge-requests"></span></button>
+      <button class="tab" role="tab" id="tab-messages" aria-selected="false">messages <span class="badge" id="badge-messages"></span></button>
+    </div>
+
     <!-- ENTRY: the whole profile on one page -->
-    <section id="view-entry" class="form fade">
-      <div class="handover" id="handover" hidden>
-        <span>You're online as <b id="handover-name"></b> in another tab.</span>
-        <button class="btn small" id="btn-handover">Continue here</button>
-      </div>
-      <h1 class="hero">You</h1>
-      <p class="sub">add your interests, chat with people who share them</p>
-      <div>
-        <label class="label" for="name-input">username</label>
-        <div class="tag-field" id="name-field">
-          <span class="tag-pill name-pill" id="name-pill" hidden><span id="name-pill-text"></span><button type="button" id="btn-name-edit" title="change" aria-label="Change username">×</button></span>
-          <input type="text" id="name-input" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type a name…">
+    <section id="view-entry" class="entry fade">
+      <div class="e-head">
+        <div class="handover" id="handover" hidden>
+          <span>You're online as <b id="handover-name"></b> in another tab.</span>
+          <button class="btn small" id="btn-handover">Continue here</button>
         </div>
-        <p class="hint">Enter or space when you're done</p>
-        <p class="err" id="err-name"></p>
+        <h1 class="hero">You</h1>
+        <p class="sub">add your interests, chat with people who share them</p>
       </div>
-      <div>
-        <span class="label">gender · optional</span>
-        <div class="choices" id="gender-choices" role="group" aria-label="Gender"></div>
-      </div>
-      <div>
-        <span class="label">interests · up to ten</span>
-        <div class="tag-field" id="tag-field">
-          <div id="tag-list"></div>
-          <input type="text" id="keyword-input" placeholder="type here…" maxlength="24" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Interests">
+      <div class="e-fields floe">
+        <div>
+          <label class="label" for="name-input">username</label>
+          <div class="tag-field" id="name-field">
+            <span class="tag-pill name-pill" id="name-pill" hidden><span id="name-pill-text"></span><button type="button" id="btn-name-edit" title="change" aria-label="Change username">×</button></span>
+            <input type="text" id="name-input" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type a name…">
+          </div>
+          <p class="hint">Enter or space when you're done</p>
+          <p class="err" id="err-name"></p>
         </div>
-        <p class="hint">up to ten words · Enter, space or comma after each</p>
-        <p class="err" id="err-tags"></p>
+        <div>
+          <span class="label">gender · optional</span>
+          <div class="choices" id="gender-choices" role="group" aria-label="Gender"></div>
+        </div>
+        <div>
+          <span class="label">interests · up to ten</span>
+          <div class="tag-field" id="tag-field">
+            <div id="tag-list"></div>
+            <input type="text" id="keyword-input" placeholder="type here…" maxlength="24" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Interests">
+          </div>
+          <p class="hint">up to ten words · Enter, space or comma after each</p>
+          <p class="err" id="err-tags"></p>
+        </div>
       </div>
-      <div>
-        <span class="label">how others see you</span>
+      <div class="e-aside">
+        <div>
+          <span class="label">how others see you</span>
+          <p class="hint">This card is all anyone online can see.</p>
+        </div>
         <div class="preview" id="preview"></div>
+        <div class="waterline"></div>
+        <div class="temporary floe lo">
+          <span class="label">good to know · everything here is temporary</span>
+          <ul>
+            <li>There's no account and no password. Your profile only exists while you're online.</li>
+            <li>When you log off, close or reload this page, or lose your connection for more than 5 minutes, your profile, requests and chats are deleted for good. Nobody can bring them back, not even us.</li>
+            <li>After 30 minutes without doing anything, you're logged off automatically.</li>
+            <li>Next time, you start from scratch with a new profile. Earlier chats can't be continued.</li>
+            <li>While you're online, anyone online can see your profile. People can only reach you with a request and a message, and you decide who gets through.</li>
+          </ul>
+        </div>
       </div>
-      <div class="temporary">
-        <span class="label">good to know · everything here is temporary</span>
-        <ul>
-          <li>There's no account and no password. Your profile only exists while you're online.</li>
-          <li>When you log off, close or reload this page, or lose your connection for more than 5 minutes, your profile, requests and chats are deleted for good. Nobody can bring them back, not even us.</li>
-          <li>After 30 minutes without doing anything, you're logged off automatically.</li>
-          <li>Next time, you start from scratch with a new profile. Earlier chats can't be continued.</li>
-          <li>While you're online, anyone online can see your profile. People can only reach you with a request and a message, and you decide who gets through.</li>
-        </ul>
+      <div class="e-go">
+        <div>
+          <p class="check"><label class="check" for="adult"><input type="checkbox" id="adult"> 18+ only. I confirm I'm an adult and agree to the</label>&nbsp;<a href="/terms">Terms</a>.</p>
+          <p class="err" id="err-adult"></p>
+        </div>
+        <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <div><button class="btn" id="btn-go">Go online →</button></div>
+        <p class="err" id="err-go"></p>
+        <p class="trust">no&nbsp;accounts &nbsp;·&nbsp; no&nbsp;storage &nbsp;·&nbsp; no&nbsp;ads &nbsp;·&nbsp; end-to-end&nbsp;encrypted</p>
       </div>
-      <div>
-        <p class="check"><label class="check" for="adult"><input type="checkbox" id="adult"> 18+ only. I confirm I'm an adult and agree to the</label>&nbsp;<a href="/terms">Terms</a>.</p>
-        <p class="err" id="err-adult"></p>
-      </div>
-      <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
-      <div><button class="btn" id="btn-go">Go online →</button></div>
-      <p class="err" id="err-go"></p>
-      <p class="trust">no&nbsp;accounts &nbsp;·&nbsp; no&nbsp;storage &nbsp;·&nbsp; no&nbsp;ads &nbsp;·&nbsp; end-to-end&nbsp;encrypted</p>
     </section>
 
     <!-- LIVE: discover, requests, messages -->
     <section id="view-main" hidden>
       <div class="banner" id="banner" role="status"></div>
-      <div class="tabs" role="tablist">
-        <button class="tab" role="tab" id="tab-discover" aria-selected="true">discover</button>
-        <button class="tab" role="tab" id="tab-requests" aria-selected="false">requests <span class="badge" id="badge-requests"></span></button>
-        <button class="tab" role="tab" id="tab-messages" aria-selected="false">messages <span class="badge" id="badge-messages"></span></button>
-      </div>
       <div class="note" id="note" role="status" aria-live="polite"></div>
 
-      <div id="panel-discover">
-        <div class="meta first"><span class="label">your interests · online now</span><span class="tick"><i></i>live</span></div>
-        <div class="chips" id="chips-mine"></div>
-        <div class="meta"><span class="label" id="top-label">popular now</span><button class="link" id="btn-all"></button></div>
-        <div class="chips" id="chips-top"></div>
-        <div class="ai-card" id="ai-card" hidden>
-          <span><b>AI</b><span class="hint">Chat with an AI instead: not a person. It sees your profile and reads your messages to reply. Nothing is stored.</span></span>
-          <button class="ghost accent" id="btn-ai">start AI chat</button>
+      <div id="panel-discover" class="disc">
+        <div class="disc-side">
+          <div class="meta first"><span class="label">your interests · online now</span><span class="tick"><i></i>live</span></div>
+          <div class="chips" id="chips-mine"></div>
+          <div class="meta"><span class="label" id="top-label">popular now</span><button class="link" id="btn-all"></button></div>
+          <div class="chips" id="chips-top"></div>
+          <div class="ai-card" id="ai-card" hidden>
+            <span><b>AI</b><span class="hint">Chat with an AI instead: not a person. It sees your profile and reads your messages to reply. Nothing is stored.</span></span>
+            <button class="ghost accent" id="btn-ai">start AI chat</button>
+          </div>
         </div>
-        <div class="search-row"><input class="line-input small" id="search-input" maxlength="24" placeholder="search an interest" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
-        <div id="results"></div>
-        <div id="browse"></div>
+        <div class="disc-main">
+          <label class="search-row">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+            <input id="search-input" maxlength="24" placeholder="search an interest" aria-label="Search an interest" autocomplete="off" autocapitalize="off" spellcheck="false">
+          </label>
+          <div id="results"></div>
+          <div id="browse"></div>
+        </div>
       </div>
       <div id="panel-requests" hidden></div>
       <div id="panel-messages" hidden></div>
     </section>
 
-    <!-- CHAT -->
+    <!-- CHAT: beside the chat list on wide screens, alone on phones and in focus -->
     <section id="view-chat" hidden>
-      <div class="chat-head">
-        <button class="ghost first" id="btn-back" aria-label="Back to messages">←</button>
-        <div class="who"><div class="u" id="chat-name"></div><div class="t" id="chat-status"></div></div>
-        <span class="e2e">end-to-end encrypted</span>
+      <aside class="chatlist" id="chat-list" aria-label="Chats"></aside>
+      <div class="chat-col">
+        <div class="chat-head floe hi">
+          <button class="ghost first" id="btn-back" aria-label="Back to messages">←</button>
+          <div class="who"><div class="u" id="chat-name"></div><div class="t" id="chat-status"></div></div>
+          <span class="e2e"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>end-to-end encrypted</span></span>
+          <button class="ghost" id="btn-focus" title="Hide the chat list and tabs"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span id="focus-label">focus</span></button>
+        </div>
+        <div class="ai-banner" id="ai-banner" role="note" hidden><strong>AI</strong>You are chatting with an AI model run by Emberline, not a person.</div>
+        <div class="chat-box" id="chat-box"></div>
+        <div class="waterline"></div>
+        <div class="chat-input-row" id="chat-input-row">
+          <textarea id="chat-input" placeholder="write" maxlength="300" autocomplete="off" rows="1" aria-label="Message"></textarea>
+          <span class="chat-char-count" id="chat-char-count"></span>
+          <button class="send" id="btn-send">send</button>
+        </div>
+        <p class="chat-closed serif hint" id="chat-closed" hidden></p>
+        <div class="chat-actions">
+          <button class="ghost first" id="btn-end">end chat</button>
+          <span>
+            <button class="ghost" id="btn-report">report</button>
+            <button class="ghost danger" id="btn-block">block</button>
+          </span>
+        </div>
+        <div class="chat-actions"><div class="note" id="chat-note" role="status" aria-live="polite"></div></div>
       </div>
-      <div class="ai-banner" id="ai-banner" role="note" hidden><strong>AI</strong>You are chatting with an AI model run by Emberline, not a person.</div>
-      <div class="chat-box" id="chat-box"></div>
-      <div class="chat-input-row" id="chat-input-row">
-        <textarea id="chat-input" placeholder="write" maxlength="300" autocomplete="off" rows="1" aria-label="Message"></textarea>
-        <span class="chat-char-count" id="chat-char-count"></span>
-        <button class="send" id="btn-send">send</button>
-      </div>
-      <p class="chat-closed serif hint" id="chat-closed" hidden></p>
-      <div class="chat-actions">
-        <button class="ghost first" id="btn-end">end chat</button>
-        <button class="ghost" id="btn-report">report</button>
-        <button class="ghost danger" id="btn-block">block</button>
-      </div>
-      <div class="chat-actions"><div class="note" id="chat-note" role="status" aria-live="polite"></div></div>
     </section>
 
     <!-- AFTER LOG OFF -->

@@ -15,7 +15,7 @@
 
 Emberline is an ephemeral, anonymous chat platform that matches strangers on shared keywords. No accounts, no message storage, no identity. Every session is disposable.
 
-**Aesthetic:** "Action" — a flat `#070c14` Antarctic night with a bold, skewed uppercase headline on the left; `#e87834` ember accent, Manrope throughout, Playfair Display italic for the quiet voice. See §9.
+**Aesthetic:** "Ice floe" — a calm `#060d17` polar night where every segment is its own slab of ice with a lit top edge and 14px corners; `#e87834` ember accent, Manrope throughout, Playfair Display italic for the quiet voice, a skewed uppercase headline on the entry page. See §9.
 
 **The rule above all rules:** prefer the lean solution. If a problem can be solved with one line, do not write ten. Every layer of complexity is a future bug.
 
@@ -352,7 +352,16 @@ Design constraints, in order: **the user must always know**, then **nobody gets 
 
 ## 9. Design System
 
-"Action": a flat Antarctic night with a bold uppercase headline on the left. The background is one flat colour (`--paper`) with no decoration — no gradients, images or background shapes. The sense of motion comes from type alone: the headline and the primary CTA are skewed `-6deg`. Ember (`--accent`) is the only colour on the page.
+"Ice floe": every segment (a person, a request, a chat, a panel) is its own slab of ice floating on a calm night, instead of rows split by hairlines. A slab is `.floe` (or a `.person` inside `.cards`, `.chatlist`, `.preview`, and `.req`): a vertical gradient (`--floe`), 14px corners, a lit top edge (`inset 0 1px 0 var(--rim)`) and a soft drop shadow. Chips, chat messages and buttons use 10px corners, tabs and input fields 12px. Only the entry headline is skewed `-6deg`.
+
+- **Relevance = a brighter rim.** People who share two of your interests get `.hi`, three or more `.hi.warm` (a faint ember glow), with a "shares N" label; search results are sorted most-in-common first. Shape and position never change.
+- **Time = a melt line.** Each open request has a 2px `.melt` line along its bottom edge that shrinks over its 10 minutes and turns `--warn` in the last two. Its width is set from JS (the CSP forbids inline `style` attributes).
+- **Ember = warmth.** Ember marks you (your chips, your messages), unread chats and the one main action per screen.
+- **Tabs** sit on a thin baseline (`--rail`); the open tab is taller, lighter, has an ember top edge and covers the baseline beneath it.
+- **Fields** are grooves cut into the ice (`--groove`, inset shadow), outlined in ember on focus.
+- **Two columns from 960px:** entry (form | how others see you), discover (your interests, popular, AI | search and people), requests (for you | sent), messages (chat list | open chat). Below that everything stacks and a chat takes the whole screen.
+- **Focus** (`body.focus`, wide screens only) hides the chat list and the tabs with their badges and centres the chat at 800px. It lives in memory only.
+- The logo carries an ember-outlined **BETA** label.
 
 ### 9.1 Typography
 
@@ -369,38 +378,34 @@ All spacing follows a **4-point grid** (4, 8, 12, 16, 20, 24, 32px).
 
 ### 9.2 Colors
 
-Dark is the default when the OS is dark or unknown; light when the OS asks for it (§6.3).
+Dark is the default when the OS is dark or unknown; light when the OS asks for it (§6.3). All colours are tokens on `:root` / `[data-theme]`.
 
 | Token (dark) | Value | Usage |
 |---|---|---|
-| `--paper` | `#070c14` | Page background (flat, no gradient) |
+| `--paper` | `#060d17` | Page background, with a faint `--sky` glow at the top |
+| `--floe` / `--floe-hi` / `--floe-lo` | `#1f3a50 → #15293c` and lighter / darker | Slab surfaces |
+| `--floe-warm` | `--floe` + ember glow | Your messages, unread chats, 3+ shared interests |
+| `--rim` / `--rim-hi` / `--rim-warm` | `rgba(205,236,250,.32)` … | Lit top edge of a slab |
 | `--ink` | `#dbe9f2` | Body text (~14:1) |
-| `--ink-strong` | `#f2f8fc` | Headline, input text |
+| `--ink-strong` | `#f2f8fc` | Headline, names, input text |
 | `--muted` | `#8fabbe` | Labels, placeholders, footer (~5.5:1) |
-| `--border` | `#3a5a74` | Hairlines, disabled button |
-| `--accent` | `#e87834` | **Ember**: pills, CTA, send, focus (~5.2:1 on paper) |
-| `--accent-hover` | `#ffb070` | CTA hover; also the subtitle colour |
-| `--on-accent` | `#070c14` | Text on solid ember (~9:1) |
-| `--accent-soft` | `rgba(232,120,52,.14)` | CTA shadow, AI-offer hover |
-| `--ice` | `#7fc4ea` | Typing indicator only |
-| `--surface` | `#0b1522` | Modals, form controls |
-| `--msg-me` / `--msg-them` | `#e6f0f6` / `#f0a26b` | Own messages (white) / stranger's messages (ember) |
+| `--accent` | `#e87834` | **Ember**: CTA, send, pills, focus rings, open tab |
+| `--msg-them` | `#f0a26b` | Request messages (Playfair italic), shared interests, subtitle |
+| `--ice` | `#7fc4ea` | Typing indicator, melt line |
+| `--groove` | `#08131f` | Input fields |
+| `--rail` | `rgba(127,196,234,.24)` | Tab baseline, waterlines |
 
-Light is ice daylight: `--paper #f6f9fb`, `--ink #1c3242`, `--muted #5b7587`, `--border #9fbccd`, `--accent #3e88b8`, `--accent-hover #2b6a94`, `--on-accent #f6f9fb`, `--surface #edf3f7`.
+Light is daylight ice: white slabs with a thin outline instead of a rim, `--paper #f2f7fa`, `--ink #1c3242`, `--muted #5b7587`, and ember darkened to `--accent #b8531a` (white text ~4.9:1).
 
-The only colours outside the tokens are `.btn-danger` (`#c0392b`, white text ~5.4:1) and the modal scrim. The policy pages (`/privacy`, `/terms`) are dark-only and use the dark values directly.
+The only colours outside the tokens are `.btn.danger` (`#c0392b`, white text ~5.4:1). The policy pages (`/privacy`, `/terms`) are dark-only and use the dark values directly.
 
 ### 9.3 Chat Layout
 
-One column, max-width 640px, centered. The stranger (`.msg.them`) is left-aligned in `--msg-them` (ember); your own messages (`.msg.me`) are right-aligned in `--msg-me` (white). In light mode the same roles are glacial blue and ink. When the conversation ends (match left, or connection lost), `body.is-over` fades every message to `--muted` over 0.6s — "the fire is out". Leave and Next clear it. Speaker changes get a **36px** gap, consecutive messages from the same speaker **6px** (`.msg.me + .msg.me`, `.msg.them + .msg.them`).
-
-No bubbles, no borders, no backgrounds on messages. Pure text.
-
-System messages are centered Playfair italic in `--muted`; matched keywords inside them are `<em>` in `--accent`. In an AI chat, `.ai-banner` (accent outline) sits above the messages for the whole conversation (`body.is-ai`).
+On wide screens the chat opens beside the chat list; on phones and in focus it is alone. Messages are 10px slabs: the other person's (`.msg.them`) left on `--floe` in `--ink`, your own (`.msg.me`) right on `--floe-warm`. Speaker changes get a 16px gap, consecutive messages from the same speaker 6px. When the chat is over (`.chat-over`) messages fade to `--muted`. System messages are centered Playfair italic in `--muted`, without a slab. A thin waterline separates the messages from the input.
 
 ### 9.4 Buttons
 
-Only the primary CTA (`.btn`) is a solid ember block, skewed `-6deg`. `.btn-ghost`, `.btn-next` and modal buttons reset `transform` and `background`. Send, leave, report and next are tracked uppercase text buttons. The AI offer is an accent-outlined ghost button. Destructive actions use `.btn-danger`.
+The primary CTA (`.btn`) and send are solid ember with 10px corners; `.btn.small` for Accept and modal actions. Everything else is a tracked uppercase text button (`.ghost`). Destructive confirmations use `.btn.danger`.
 
 ### 9.5 Header and Footer
 
@@ -408,11 +413,11 @@ Header spans the full width: tracked uppercase logo on the left, live count and 
 
 ### 9.6 Chat Input
 
-Transparent background, underline on `.chat-input-row` (`1px solid var(--border)`) that turns `--accent` on focus. "send" is a plain text button in `--accent`, no pill or background.
+The textarea is a groove (`--groove`, 12px corners) that gets an ember outline on focus; "send" is a solid ember button beside it.
 
 ### 9.7 Message Height Cap
 
-Messages have `max-height: 200px` with hidden scrollbar overflow. The textarea input also caps at 200px. When the cap is reached (`.at-height-limit`), the row's underline turns `--accent` via `:has()` and Shift+Enter is blocked (no new lines allowed).
+Messages have `max-height: 200px` with hidden scrollbar overflow. The textarea input also caps at 200px. When the cap is reached (`.at-height-limit`), the field's outline turns `--accent` and Shift+Enter is blocked (no new lines allowed).
 
 ### 9.8 Typing Indicator
 

@@ -116,17 +116,22 @@ function show(view) {
   for (const v of ['entry', 'main', 'chat', 'gone']) $('view-' + v).hidden = v !== view;
   document.body.classList.toggle('is-chat', view === 'chat');
   if (view !== 'chat') openChatId = null;
+  $('tabs').hidden = !me || (view !== 'main' && view !== 'chat');
   $('btn-logoff').hidden = !me;
   updateTagline();
 }
 
 function tab(name) {
+  if (!$('view-chat').hidden) show('main'); // the tabs stay visible beside a chat on wide screens
+  selectTab(name);
+  renderCurrent();
+}
+function selectTab(name) {
   currentTab = name;
   for (const t of ['discover', 'requests', 'messages']) {
     $('tab-' + t).setAttribute('aria-selected', String(t === name));
     $('panel-' + t).hidden = t !== name;
   }
-  renderCurrent();
 }
 
 function renderCurrent() {
@@ -162,15 +167,22 @@ function updateBadges() {
   $('badge-messages').textContent = nMsg || '';
   // The only alert: a count in the page title. No sound, no notifications.
   document.title = nReq ? `(${nReq}) Emberline` : (me ? 'Emberline' : BASE_TITLE);
+  if (!$('view-chat').hidden) renderChatList();
 }
 
 // ── Person rows ───────────────────────────────────────────────────────────────
 
-function personRow(p, actions, extra = '', attrs = '') {
+// The more interests someone shares with you, the brighter their card's rim
+function sharedCount(p) { return me ? (p.interests || []).filter(t => me.interests.includes(t)).length : 0; }
+
+function personRow(p, actions, extra = '', attrs = '', cls = '') {
   const mine = me ? me.interests : [];
   const ints = (p.interests || []).map(t => mine.includes(t) ? `<b>${esc(t)}</b>` : esc(t)).join(' · ');
-  return `<div class="person${p.gone ? ' gone' : ''}" ${attrs}>
-    <div class="who"><div class="u">${esc(p.name)}<span class="g">${esc(p.gender || '')}</span></div><div class="t">${ints}</div>${extra}</div>
+  const n = sharedCount(p);
+  // Lists that mark their own cards (the chat list) skip the relevance rim
+  const lit = cls ? '' : n >= 3 ? ' hi warm' : n >= 2 ? ' hi' : '';
+  return `<div class="person${lit}${p.gone ? ' gone' : ''}${cls}" ${attrs}>
+    <div class="who"><div class="top"><div class="u">${esc(p.name)}<span class="g">${esc(p.gender || '')}</span></div>${n >= 2 ? `<span class="shares">shares ${n}</span>` : ''}</div><div class="t">${ints}</div>${extra}</div>
     <div class="acts">${actions}</div></div>`;
 }
 
@@ -743,11 +755,16 @@ function watchCounts(on) {
   wsSend({ type: 'counts_watch', on, interests: searchState ? [searchState.interest] : [] });
 }
 
+// Bigger chips for interests with more people online (the server's count buckets)
+const CHIP_SIZE = { '1–4': 'z1', '10+': 'z3', '25+': 'z4', '50+': 'z5' };
+
 function chipHtml(t, b) {
   const key = t, changed = lastBuckets.has(key) && lastBuckets.get(key) !== b;
   lastBuckets.set(key, b);
   const sel = searchState && searchState.interest === t;
-  return `<button type="button" class="chip${sel ? ' sel' : ''}${changed ? ' flash' : ''}" data-t="${esc(t)}">${esc(t)} <span class="n">${esc(b)}</span></button>`;
+  const size = CHIP_SIZE[b] ? ' ' + CHIP_SIZE[b] : '';
+  const mine = me && me.interests.includes(t) ? ' mine' : '';
+  return `<button type="button" class="chip${size}${mine}${sel ? ' sel' : ''}${changed ? ' flash' : ''}" data-t="${esc(t)}">${esc(t)} <span class="n">${esc(b)}</span></button>`;
 }
 
 function renderDiscover() {
@@ -783,14 +800,13 @@ function renderResults() {
   const s = searchState;
   if (!s) { $('results').innerHTML = ''; return; }
   const secs = Math.round((Date.now() - s.at) / 1000);
-  const ids = s.ids.filter(id => !blocked.has(id));
-  let h = `<div class="meta"><span class="label">${esc(s.interest)} · ${esc(s.bucket)} online</span>
-    <span class="hint">${ids.length ? `${ids.length} shown, random · ` : ''}${secs < 5 ? 'just now' : secs < 60 ? secs + ' s ago' : Math.round(secs / 60) + ' min ago'} · <button type="button" class="link" id="btn-refresh">refresh</button></span></div>`;
+  // A random sample from the server; most in common first
+  const ids = s.ids.filter(id => !blocked.has(id) && people.has(id))
+    .sort((a, b) => sharedCount(people.get(b)) - sharedCount(people.get(a)));
+  let h = `<div class="meta first"><span class="label"><em>${esc(s.interest)}</em> · ${esc(s.bucket)} online</span>
+    <span class="hint">${ids.length ? `${ids.length} shown, most in common first · ` : ''}${secs < 5 ? 'just now' : secs < 60 ? secs + ' s ago' : Math.round(secs / 60) + ' min ago'} · <button type="button" class="link" id="btn-refresh">refresh</button></span></div>`;
   if (!ids.length) h += '<div class="empty serif">No one else online with this interest right now. The count updates live, so check back.</div>';
-  for (const id of ids) {
-    const p = people.get(id);
-    if (p) h += personRow(p, relationAction(p));
-  }
+  h += '<div class="cards">' + ids.map(id => { const p = people.get(id); return personRow(p, relationAction(p)); }).join('') + '</div>';
   $('results').innerHTML = h;
   renderBrowse();
 }
@@ -803,14 +819,15 @@ function renderBrowse() {
   if (!b) { $('browse').innerHTML = ''; return; }
   const above = new Set(searchState ? searchState.ids : []);
   const ids = b.ids.filter(id => !blocked.has(id) && !above.has(id));
-  let h = `<div class="meta"><span class="label">others online · random</span>
+  let h = `<div class="meta${searchState ? '' : ' first'}"><span class="label">others online · random</span>
     <span class="hint">${ago(b.at)} · <button type="button" class="link" id="btn-browse-refresh">show others</button></span></div>`;
   if (!ids.length) h += '<div class="empty serif">Nobody else is online right now.</div>';
+  h += '<div class="cards">';
   for (const id of ids) {
     const p = people.get(id);
     if (p) h += personRow(p, relationAction(p));
   }
-  $('browse').innerHTML = h;
+  $('browse').innerHTML = h + '</div>';
 }
 
 function requestBrowse() {
@@ -914,27 +931,39 @@ function renderRequests() {
       : 'You stay visible; your profile shows "not taking requests".'}</span></span></label>`;
 
   const ins = [...incoming.values()].sort((a, b) => a.expiresAt - b.expiresAt);
-  h += `<div class="meta first"><span class="label">requests for you · ${ins.length}</span><span class="hint">expire after 10 min · declining is silent: they only see "no answer" once it expires</span></div>`;
+  h += `<div class="req-cols"><div><div class="meta first"><span class="label">requests for you · ${ins.length}</span><span class="hint">expire after 10 min · declining is silent: they only see "no answer" once it expires</span></div>`;
   if (!ins.length) h += '<div class="empty">No requests right now. When someone wants to chat, their message shows up here and you decide.</div>';
   for (const r of ins) {
     const p = people.get(r.fromId) || { name: '?', interests: [] };
     h += `<div class="req">${personRow(p, `<span class="when">expires in ${minsLeft(r.expiresAt)} min</span>`)}
       <div class="message">“${esc(r.text)}”</div>
-      <div class="acts"><button type="button" class="ghost accent" data-acc="${esc(r.requestId)}">accept</button><button type="button" class="ghost" data-dec="${esc(r.requestId)}">decline</button><button type="button" class="ghost danger" data-blk="${esc(r.fromId)}">block</button><button type="button" class="ghost" data-rep="${esc(r.fromId)}">report</button></div></div>`;
+      <div class="acts"><button type="button" class="btn small" data-acc="${esc(r.requestId)}">Accept</button><button type="button" class="ghost" data-dec="${esc(r.requestId)}">decline</button><button type="button" class="ghost push" data-rep="${esc(r.fromId)}">report</button><button type="button" class="ghost danger" data-blk="${esc(r.fromId)}">block</button></div>
+      ${meltHtml(r.expiresAt)}</div>`;
   }
 
   const outs = [...outgoing.values()];
   const pending = outs.filter(r => r.state === 'pending').length;
-  h += `<div class="meta"><span class="label">sent · ${pending} of ${MAX_OUTGOING}</span><span class="hint">expire after 10 min without an answer</span></div>`;
+  h += `</div><div><div class="meta first"><span class="label">sent · ${pending} of ${MAX_OUTGOING}</span><span class="hint">expire after 10 min without an answer</span></div>`;
   if (!outs.length) h += '<div class="empty">Requests you send wait here until they\'re answered. Accepted ones move to messages.</div>';
   for (const r of outs) {
     const p = people.get(r.toId) || { name: '?', interests: [] };
     const when = r.state === 'pending' ? `waiting · expires in ${minsLeft(r.expiresAt)} min` : r.state === 'gone' ? `${esc(p.name)} logged off` : 'no answer · expired';
     h += `<div class="req${r.state === 'pending' ? '' : ' gone'}">${personRow(p, `<span class="when">${when}</span>`)}
       ${r.text ? `<div class="message mine">“${esc(r.text)}”</div>` : ''}
-      <div class="acts"><button type="button" class="ghost" data-cancel="${esc(r.requestId)}">${r.state === 'pending' ? 'withdraw' : 'remove'}</button></div></div>`;
+      <div class="acts"><button type="button" class="ghost first" data-cancel="${esc(r.requestId)}">${r.state === 'pending' ? 'withdraw' : 'remove'}</button></div>
+      ${r.state === 'pending' ? meltHtml(r.expiresAt) : ''}</div>`;
   }
-  $('panel-requests').innerHTML = h;
+  $('panel-requests').innerHTML = h + '</div></div>';
+  // The page's CSP allows no inline style attributes, so the melt widths are set here
+  for (const i of $('panel-requests').querySelectorAll('.melt i')) i.style.width = i.dataset.w + '%';
+}
+
+// A line along the bottom of a request that shrinks as its 10 minutes run out
+const REQUEST_TTL_MS = 10 * 60_000;
+function meltHtml(expiresAt) {
+  const left = expiresAt - Date.now();
+  const pct = Math.max(0, Math.min(100, Math.round(left / REQUEST_TTL_MS * 100)));
+  return `<div class="melt${left < 2 * 60_000 ? ' late' : ''}" aria-hidden="true"><i data-w="${pct}"></i></div>`;
 }
 
 $('panel-requests').addEventListener('change', e => {
@@ -974,21 +1003,31 @@ function chatStatus(c) {
   return '<span class="on">online</span>';
 }
 
-function renderMessages() {
+// The list of chats: in the messages tab, and beside an open chat on wide screens
+function chatListHtml() {
   let h = '<div class="meta first"><span class="label">chats</span><span class="e2e">end-to-end encrypted</span></div>';
   const list = [...chatMap.values()].sort((a, b) => b.lastAt - a.lastAt);
   if (!list.length) h += '<div class="empty">No chats yet. Send a request from discover, or accept one under requests.</div>';
   for (const c of list) {
     const last = c.msgs.filter(m => m.side !== 'system').slice(-1)[0];
-    const badge = c.isNew ? '<span class="badge">new</span>' : c.unread ? `<span class="badge">${c.unread}</span>` : '<span class="ghost">open</span>';
+    const open = c.chatId === openChatId;
+    const badge = c.isNew ? '<span class="badge">new</span>' : c.unread ? `<span class="badge">${c.unread}</span>` : open ? '' : '<span class="ghost">open</span>';
     const p = c.ai ? { name: c.name, gender: 'AI', interests: [] } : (people.get(c.partnerId) || { name: c.name, interests: [] });
-    h += personRow(p, badge, `<div class="t">${chatStatus(c)}${last ? ' · ' + esc(last.text.slice(0, 80)) : ''}</div>`, `data-open="${esc(c.chatId)}" role="button" tabindex="0"`)
-      .replace('class="person', 'class="person clickable');
+    const cls = ' clickable' + (open ? ' open' : c.isNew || c.unread ? ' warm' : '') + (c.closed ? ' gone' : '');
+    h += personRow(p, badge, `<div class="t">${chatStatus(c)}${last ? ' · ' + esc(last.text.slice(0, 80)) : ''}</div>`, `data-open="${esc(c.chatId)}" role="button" tabindex="0"`, cls);
   }
-  $('panel-messages').innerHTML = h;
+  return h;
 }
-$('panel-messages').addEventListener('click', e => { const r = e.target.closest('[data-open]'); if (r) openChat(r.dataset.open); });
-$('panel-messages').addEventListener('keydown', e => { if (e.key === 'Enter') { const r = e.target.closest('[data-open]'); if (r) openChat(r.dataset.open); } });
+
+function renderMessages() {
+  $('panel-messages').innerHTML = `<div class="split"><div class="chatlist">${chatListHtml()}</div>
+    <p class="split-empty serif">Open a chat to read it here.</p></div>`;
+}
+function renderChatList() { $('chat-list').innerHTML = chatListHtml(); }
+for (const el of [$('panel-messages'), $('chat-list')]) {
+  el.addEventListener('click', e => { const r = e.target.closest('[data-open]'); if (r) openChat(r.dataset.open); });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { const r = e.target.closest('[data-open]'); if (r) openChat(r.dataset.open); } });
+}
 
 // ── Chats ─────────────────────────────────────────────────────────────────────
 
@@ -1028,6 +1067,7 @@ function openChat(chatId) {
   c.unread = 0; c.isNew = false;
   updateBadges();
   show('chat');
+  selectTab('messages');
   openChatId = chatId;
   renderChat();
   if (!c.closed) $('chat-input').focus();
@@ -1039,7 +1079,8 @@ function renderChatHead() {
   const p = c.ai ? null : people.get(c.partnerId);
   $('chat-name').innerHTML = esc(c.name) + (p && p.gender ? `<span class="g">${esc(p.gender)}</span>` : '');
   const shared = p ? (p.interests || []).filter(t => me.interests.includes(t)) : [];
-  $('chat-status').innerHTML = (c.ai ? '<span class="on">AI</span>' : chatStatus(c)) + (shared.length ? ' · you share ' + shared.map(esc).join(', ') : '');
+  $('chat-status').innerHTML = (c.ai ? '<span class="on">AI</span>' : chatStatus(c)) + (shared.length ? ' · you share ' + shared.map(t => `<b>${esc(t)}</b>`).join(', ') : '');
+  renderChatList();
 }
 
 function renderChat() {
@@ -1176,6 +1217,13 @@ function closeChat(c) {
 }
 
 $('btn-send').addEventListener('click', sendMessage);
+// Focus: hide the chat list and the tabs (and their badges) to read one chat in peace.
+// Wide screens only; on phones a chat already has the whole screen.
+$('btn-focus').addEventListener('click', () => {
+  const on = document.body.classList.toggle('focus');
+  $('focus-label').textContent = on ? 'exit focus' : 'focus';
+  $('btn-focus').title = on ? 'Show the chat list and tabs again' : 'Hide the chat list and tabs';
+});
 $('btn-back').addEventListener('click', () => { show('main'); tab('messages'); });
 $('btn-end').addEventListener('click', () => {
   const c = chatMap.get(openChatId);
