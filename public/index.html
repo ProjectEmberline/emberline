@@ -148,6 +148,11 @@
   .preview .person { border: 0; }
   .preview .is-sample { opacity: .6; font-style: italic; } /* stand-in text until something is typed */
   .notice { border-left: 2px solid var(--accent); padding: 8px 14px; font-size: 0.875rem; color: var(--muted); }
+  .temporary { border-left: 2px solid var(--accent); padding: 4px 0 4px 14px; }
+  .temporary .label { color: var(--accent); margin-bottom: 8px; }
+  .temporary ul { list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; color: var(--ink); }
+  .temporary li { padding-left: 16px; position: relative; }
+  .temporary li::before { content: '·'; position: absolute; left: 4px; color: var(--accent); font-weight: 700; }
   .check { display: flex; gap: 10px; align-items: center; font-size: 0.875rem; color: var(--muted); }
   .check input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
   .check a { color: inherit; text-underline-offset: 3px; }
@@ -377,7 +382,16 @@
         <span class="label">how others see you</span>
         <div class="preview" id="preview"></div>
       </div>
-      <p class="notice">Visible to anyone online while you are. People can only reach you with a request and a message, and you decide who gets through. When you log off, your profile, requests and chats are deleted.</p>
+      <div class="temporary">
+        <span class="label">good to know · everything here is temporary</span>
+        <ul>
+          <li>There's no account and no password. Your profile only exists while you're online.</li>
+          <li>When you log off, close or reload this page, or lose your connection for more than 5 minutes, your profile, requests and chats are deleted for good. Nobody can bring them back, not even us.</li>
+          <li>After 30 minutes without doing anything, you're logged off automatically.</li>
+          <li>Next time, you start from scratch with a new profile. Earlier chats can't be continued.</li>
+          <li>While you're online, anyone online can see your profile. People can only reach you with a request and a message, and you decide who gets through.</li>
+        </ul>
+      </div>
       <div>
         <p class="check"><label class="check" for="adult"><input type="checkbox" id="adult"> 18+ only. I confirm I'm an adult and agree to the</label>&nbsp;<a href="/terms">Terms</a>.</p>
         <p class="err" id="err-adult"></p>

@@ -230,7 +230,9 @@ can't be probed word by word.
 - Page title: `(N) Emberline` with N = open incoming requests. No sound, no notifications API.
 - Request dialog states "at least 10 characters" before typing and shows a live counter ("7 more characters needed" → "ready to send").
 - Interest input: the live `addTag` / `splitTypedTags` logic, with the profile character rules (§0, 5).
+- `beforeunload` while online → the browser's "Leave site?" dialog (its wording can't be set; many phone browsers skip it).
 - `pagehide` → send `logoff` (a clean close deletes immediately).
+- The entry page explains in a "good to know · everything here is temporary" list what gets deleted and when.
 - `visibilitychange` → `counts_watch {on:false}` when hidden; `still_here` when visible.
 - `BroadcastChannel('emberline')` tab handover per §0, 1.
 - Request message box: required, 10–200 chars, counter.

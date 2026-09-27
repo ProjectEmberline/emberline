@@ -1396,6 +1396,14 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Leaving the page logs off: nothing is kept for a reload or a return visit
+// Reloading or closing while online would delete everything: ask first. The
+// wording of this dialog is up to the browser; many phone browsers skip it.
+window.addEventListener('beforeunload', e => {
+  if (!me) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
 window.addEventListener('pagehide', () => {
   if (me && ws && ws.readyState === WebSocket.OPEN) {
     ws._intentionalClose = true;
