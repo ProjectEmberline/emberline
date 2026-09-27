@@ -234,8 +234,58 @@ function flushTagInput() {
   if (input.value.trim()) { addTag(input.value); input.value = ''; }
 }
 
+// ── Username: locks into a pill like the interests ──────────────────────────
+// Enter, Space or comma confirms the name; the × on the pill reopens it.
+let lockedName = '';
+const NAME_RE = /^[A-Za-z0-9_.-]{3,20}$/;
+const currentName = () => lockedName || $('name-input').value.trim();
+
+function lockName(raw) {
+  const name = raw.trim();
+  if (!name) return false;
+  if (!NAME_RE.test(name)) { $('err-name').textContent = CREATE_ERRORS.name_invalid[1]; return false; }
+  lockedName = name;
+  $('name-input').value = '';
+  renderName();
+  return true;
+}
+
+function unlockName() {
+  $('name-input').value = lockedName;
+  lockedName = '';
+  renderName();
+  $('name-input').focus();
+}
+
+function renderName() {
+  $('name-pill').hidden = !lockedName;
+  $('name-pill-text').textContent = lockedName;
+  $('name-input').hidden = !!lockedName;
+  renderPreview();
+}
+
+$('name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ' || e.key === ',') {
+    e.preventDefault();
+    if (lockName($('name-input').value)) $('keyword-input').focus();
+  }
+});
+// Phone keyboards: the space lands in the field (see splitTypedTags)
+$('name-input').addEventListener('input', e => {
+  $('err-name').textContent = '';
+  const v = e.target.value;
+  if (!e.isComposing && /[\s,]/.test(v)) {
+    const first = v.split(/[\s,]+/)[0];
+    if (!lockName(first)) e.target.value = first;
+    else $('keyword-input').focus();
+  }
+  renderPreview();
+});
+$('btn-name-edit').addEventListener('click', e => { e.stopPropagation(); unlockName(); });
+$('name-field').addEventListener('click', () => { if (!lockedName) $('name-input').focus(); });
+
 function renderPreview() {
-  const typed = $('name-input').value.trim();
+  const typed = currentName();
   $('preview').innerHTML = personRow({ name: typed || 'your name', gender, interests: tags.length ? tags : ['your interests'] }, '');
   // Stand-in text until something is typed, so it doesn't read as filled in
   const who = $('preview').querySelector('.who');
@@ -270,7 +320,6 @@ function splitTypedTags(input) {
 $('keyword-input').addEventListener('input', e => { if (!e.isComposing) splitTypedTags(e.target); });
 $('keyword-input').addEventListener('compositionend', e => splitTypedTags(e.target));
 $('tag-field').addEventListener('click', () => { if (!$('keyword-input').disabled) $('keyword-input').focus(); });
-$('name-input').addEventListener('input', () => { $('err-name').textContent = ''; renderPreview(); });
 $('adult').addEventListener('change', () => { $('err-adult').textContent = ''; });
 
 const CREATE_ERRORS = {
@@ -286,8 +335,9 @@ const CREATE_ERRORS = {
 
 async function goOnline() {
   flushTagInput();
-  const name = $('name-input').value.trim();
-  const eName = !name ? 'Choose a username.' : !/^[A-Za-z0-9_.-]{3,20}$/.test(name) ? CREATE_ERRORS.name_invalid[1] : '';
+  if (!lockedName && $('name-input').value.trim()) lockName($('name-input').value);
+  const name = lockedName;
+  const eName = name ? '' : $('name-input').value.trim() ? CREATE_ERRORS.name_invalid[1] : 'Choose a username.';
   const eTags = tags.length ? '' : 'Add at least one interest, so people can find you.';
   const eAdult = $('adult').checked ? '' : 'Emberline is for adults only.';
   $('err-name').textContent = eName; $('err-tags').textContent = eTags; $('err-adult').textContent = eAdult; $('err-go').textContent = '';
@@ -612,6 +662,7 @@ function handleError(msg) {
     if (code === 'slow_down') { setTimeout(() => wsSend(_lastCreate), (Number(msg.retryMs) || 3000) + 100); return; }
     if (code === 'challenge_expired') { wsVerified = false; ws && (ws._intentionalClose = true, ws.close()); ws = null; goOnline(); return; }
     const [field, text] = CREATE_ERRORS[code] || ['err-go', 'Something went wrong. Please try again.'];
+    if (field === 'err-name' && lockedName) unlockName(); // taken or refused: open it for editing
     $(field).textContent = text;
     $('btn-go').disabled = false;
     return;
@@ -1365,7 +1416,6 @@ $('btn-theme').addEventListener('click', () => {
 // ── Entry wiring ──────────────────────────────────────────────────────────────
 
 $('btn-go').addEventListener('click', goOnline);
-$('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('keyword-input').focus(); } });
 
 // Footer links open in a new tab while online, so reading the policy doesn't log you off
 for (const a of document.querySelectorAll('footer a[href^="/"], .check a')) { a.target = '_blank'; a.rel = 'noopener'; }

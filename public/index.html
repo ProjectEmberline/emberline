@@ -137,6 +137,7 @@
   }
   .tag-pill button { color: var(--on-accent); opacity: .7; font-size: 1rem; line-height: 1; }
   .tag-pill button:hover { opacity: 1; }
+  .tag-pill.name-pill { text-transform: none; letter-spacing: 0.05em; font-size: 1rem; } /* names keep their case */
   .choice {
     font-size: 0.6875rem; letter-spacing: 0.15em; text-transform: uppercase; padding: 5px 9px; border-radius: 4px;
     box-shadow: inset 0 0 0 1px var(--border); color: var(--ink);
@@ -346,7 +347,11 @@
       <p class="sub">add your interests, chat with people who share them</p>
       <div>
         <label class="label" for="name-input">username</label>
-        <input class="line-input" id="name-input" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type a name…">
+        <div class="tag-field" id="name-field">
+          <span class="tag-pill name-pill" id="name-pill" hidden><span id="name-pill-text"></span><button type="button" id="btn-name-edit" title="change" aria-label="Change username">×</button></span>
+          <input type="text" id="name-input" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type a name…">
+        </div>
+        <p class="hint">Enter or space when you're done</p>
         <p class="err" id="err-name"></p>
       </div>
       <div>
