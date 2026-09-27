@@ -142,7 +142,7 @@ ignored, as today.
 | `chat_end` | `chatId` | your side closes; partner gets `chat_ended {chatId, reason:'ended'}` and keeps a read-only copy |
 | `block` | `profileId` | ends shared chats (partner sees `chat_ended {reason:'ended'}`, not "blocked"), drops requests both ways, hides both from each other's search |
 | `report` | `profileId, name, reason, details?, requestText?` | → `report_ok`. Appended to `reports.log` as `{ts, reason, details, reported, requestTextUnverified?}`; no reporter data. `name` is used if the person already logged off |
-| `ai_start` | – | one AI chat at a time → `chat_open {chatId, ai:true, partner:{name, pubKey}}`; the bot gets `matched {ai, keywords: interests, partnerPubKey}`. Errors: `ai_unavailable`, `ai_already_open`, `chats_full`, `slow_down` |
+| `ai_start` | – | one AI chat at a time → `chat_open {chatId, ai:true, partner:{name, pubKey}}`; the bot gets `matched {ai, keywords: interests, name, gender, partnerPubKey}` (`gender` is `''` when not shown). Errors: `ai_unavailable`, `ai_already_open`, `chats_full`, `slow_down` |
 | `still_here` | – | answers `idle_warning` (any other user action also counts) |
 | `logoff` | – | deletes everything now (§5); socket may stay open for a new profile |
 

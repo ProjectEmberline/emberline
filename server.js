@@ -1077,8 +1077,9 @@ function handleHumanFrame(ws, msg) {
       chats.set(c.id, c);
       me.chats.add(c.id);
       bot._aiChat = c.id;
-      // The bot gets the person's interests as conversation topics
-      send(bot, { type: 'matched', ai: true, keywords: me.interests, partnerPubKey: me.pubKey });
+      // The bot gets the person's profile: interests as conversation topics,
+      // plus the name and gender ('' = not shown) so it can address them
+      send(bot, { type: 'matched', ai: true, keywords: me.interests, name: me.name, gender: me.gender, partnerPubKey: me.pubKey });
       send(ws,  { type: 'chat_open', chatId: c.id, ai: true, partner: { name: 'Emberline AI', pubKey: bot.pubKey } });
       console.log(`[ai] chat opened chats=${chats.size}`);
       break;
@@ -1257,7 +1258,7 @@ const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <h2>End-to-end encryption</h2>
 <p>Requests and chat messages are encrypted on your device using the NaCl box construction (Curve25519 + XSalsa20 + Poly1305). Only the two participants can decrypt them. The server relays encrypted data it cannot read. In an AI chat, the AI is the other participant (see below).</p>
 <h2>AI chat</h2>
-<p>You can choose to chat with an AI instead of a person. This only happens if you start it, and an AI chat is labeled as such for its entire duration. The AI is a language model running on hardware operated by Emberline. It is the other participant in the conversation, so to reply it decrypts your messages and receives your interests as conversation topics. AI conversations are held in memory only while the chat lasts; they are not stored, logged, or used to train models. The AI can be wrong or say strange things — do not rely on it for advice, and do not share personal information with it.</p>
+<p>You can choose to chat with an AI instead of a person. This only happens if you start it, and an AI chat is labeled as such for its entire duration. The AI is a language model running on hardware operated by Emberline. It is the other participant in the conversation, so to reply it decrypts your messages and receives your profile: your username, your gender if you chose to show one, and your interests as conversation topics. AI conversations are held in memory only while the chat lasts; they are not stored, logged, or used to train models. The AI can be wrong or say strange things — do not rely on it for advice, and do not share personal information with it.</p>
 <h2>Cookies, tracking, and storage</h2>
 <p>We use no cookies, no analytics, no tracking pixels, and no third-party services in your browser. We do not use localStorage, sessionStorage, or any other form of persistent client-side storage: your profile, requests and chats exist only in the open page. If you open Emberline in a second tab of the same browser, that tab can take over your session; the two tabs hand it over directly in memory, and nothing is stored. All fonts and cryptography libraries are self-hosted — no external requests are made by your browser.</p>
 <h2>Illegal content</h2>

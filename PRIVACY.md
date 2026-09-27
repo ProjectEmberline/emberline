@@ -44,7 +44,7 @@ Requests and chat messages are encrypted on your device using the NaCl box const
 
 ## AI chat
 
-You can choose to chat with an AI instead of a person. This only happens if you start it, and an AI chat is labeled as such for its entire duration. The AI is a language model running on hardware operated by Emberline. It is the other participant in the conversation, so to reply it decrypts your messages and receives your interests as conversation topics. AI conversations are held in memory only while the chat lasts; they are not stored, logged, or used to train models. The AI can be wrong or say strange things — do not rely on it for advice, and do not share personal information with it.
+You can choose to chat with an AI instead of a person. This only happens if you start it, and an AI chat is labeled as such for its entire duration. The AI is a language model running on hardware operated by Emberline. It is the other participant in the conversation, so to reply it decrypts your messages and receives your profile: your username, your gender if you chose to show one, and your interests as conversation topics. AI conversations are held in memory only while the chat lasts; they are not stored, logged, or used to train models. The AI can be wrong or say strange things — do not rely on it for advice, and do not share personal information with it.
 
 ## Cookies, tracking, and storage
 

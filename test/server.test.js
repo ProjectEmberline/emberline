@@ -587,7 +587,7 @@ function bot(token = BOT_TOKEN) {
 const countInfo = async () => (await fetch(HTTP + '/count')).json();
 
 test('AI chat: on request only, labeled, bots never counted as people', async () => {
-  const h = await profile({ interests: ['aitopic', 'music'] });
+  const h = await profile({ interests: ['aitopic', 'music'], gender: 'non-binary' });
   const before = await countInfo();
   const b = await bot();
   const botKp = nacl.box.keyPair();
@@ -603,6 +603,8 @@ test('AI chat: on request only, labeled, bots never counted as people', async ()
   assert.equal(open.partner.pubKey, b64(botKp.publicKey));
   assert.equal(bm.ai, true);
   assert.deepEqual(bm.keywords, ['aitopic', 'music'], 'the bot gets the interests as topics');
+  assert.equal(bm.name, h.name, 'and the username');
+  assert.equal(bm.gender, 'non-binary', 'and the gender');
   assert.equal(bm.partnerPubKey, h.pub);
   assert.equal((await countInfo()).ai, false, 'busy bot is not offered');
 

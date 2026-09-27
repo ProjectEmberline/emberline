@@ -938,7 +938,7 @@ function openedChat(msg) {
     msgs: [], unread: 0, isNew: false, closed: false, closedReason: '', away: false, lastAt: Date.now(),
   };
   c.msgs.push({ side: 'system', text: c.ai
-    ? "Connected to an AI, not a person. It reads your interests and messages to reply and can be wrong. Nothing is stored."
+    ? "Connected to an AI, not a person. It sees your profile and reads your messages to reply, and can be wrong. Nothing is stored."
     : 'Chat started · end-to-end encrypted · never stored' });
   chatMap.set(c.chatId, c);
   const sent = msg.requestId && outgoing.get(msg.requestId);
