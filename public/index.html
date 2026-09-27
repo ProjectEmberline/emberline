@@ -250,6 +250,12 @@
   .msg.me   { align-self: flex-end;   text-align: right; color: var(--msg-me); }
   .msg.me, .msg.them { transition: color .6s; }
   .chat-over .msg.me, .chat-over .msg.them { color: var(--muted); }
+  /* A message on its way: dim until the server has it or the other person is back */
+  .msg.waiting, .msg.failed { opacity: .55; }
+  .msg.sending { animation: msg-dim .2s 1.2s forwards; } /* only noticeable if it takes a while */
+  @keyframes msg-dim { to { opacity: .55; } }
+  .msg-status { display: block; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+  .msg.failed .msg-status { color: var(--danger); }
   .msg.system {
     align-self: center; text-align: center; max-width: 100%; margin: 0 0 8px;
     font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.0625rem; color: var(--muted);

@@ -413,7 +413,7 @@ function wsSend(obj) {
 let _resumeDeadline = 0, _resumeTimer = null, _resumeDelay = 1000;
 
 function connectionLost() {
-  clearOutbox();
+  // Unsent messages stay in the outbox and go out once the session resumes
   if (!_resumeDeadline) _resumeDeadline = Date.now() + GRACE_MS - 5_000;
   setBanner('reconnect', 'Connection lost, reconnecting… Your profile and chats are kept for 5 minutes.');
   updateTagline();
@@ -463,6 +463,7 @@ function handleMessage(msg) {
         // Resumed after a dropped connection or a tab handover
         _resumeDeadline = 0; _resumeDelay = 1000;
         clearBanner('reconnect');
+        flushOutbox();
         watchCounts(document.visibilityState === 'visible');
         updateTagline();
       }
@@ -568,11 +569,26 @@ function handleMessage(msg) {
       break;
     }
 
+    case 'chat_ack': {
+      const c = chatMap.get(msg.chatId);
+      const m = c && c.msgs.find(x => x.ref && x.ref === msg.ref);
+      if (!m) break;
+      if (msg.queued) {
+        setMsgState(c, m, 'waiting');
+        if (!c.away) { c.away = true; openChatId === c.chatId ? renderChatHead() : renderCurrent(); }
+      } else setMsgState(c, m, undefined);
+      break;
+    }
+
     case 'chat_ended': {
       const c = chatMap.get(msg.chatId);
       if (!c || c.closed) break;
       c.closed = true;
       c.closedReason = msg.reason === 'logged_off' ? 'logged_off' : 'ended';
+      // Messages still waiting for them won't arrive now
+      const lost = c.msgs.filter(m => m.state === 'waiting' || m.state === 'sending');
+      lost.forEach(m => setMsgState(c, m, 'failed'));
+      if (lost.length) addChatMsg(c, 'system', `${plural(lost.length, 'message')} marked "not delivered" didn't reach ${c.name}.`);
       addChatMsg(c, 'system', c.closedReason === 'logged_off' ? `${c.name} logged off.` : `${c.name} ended the chat.`);
       if (openChatId === c.chatId) renderChat();
       break;
@@ -583,6 +599,12 @@ function handleMessage(msg) {
       const c = chatMap.get(msg.chatId);
       if (!c) break;
       c.away = msg.type === 'partner_reconnecting';
+      if (!c.away) {
+        // The server handed over everything that waited for them
+        const waited = c.msgs.filter(m => m.state === 'waiting');
+        waited.forEach(m => setMsgState(c, m, undefined));
+        if (waited.length) addChatMsg(c, 'system', `${c.name} is back. Your ${waited.length === 1 ? 'message was' : 'messages were'} delivered.`);
+      }
       if (openChatId === c.chatId) renderChatHead();
       else renderCurrent();
       break;
@@ -666,7 +688,9 @@ function handleError(msg) {
   if (typeof msg.chatId === 'string') {
     const c = chatMap.get(msg.chatId);
     const name = c ? c.name : 'They';
-    const text = code === 'partner_away' ? `${name} is reconnecting. Your last message wasn't delivered.`
+    const m = c && msg.ref && c.msgs.find(x => x.ref === msg.ref);
+    if (m) setMsgState(c, m, 'failed');
+    const text = code === 'partner_away' ? `${name} is reconnecting and too many messages are waiting for them. This one wasn't delivered.`
       : code === 'chat_closed' ? 'This chat has ended. Your message wasn\'t delivered.'
       : code === 'rate_limited' ? 'A message could not be delivered. Slow down a little.'
       : 'A message could not be delivered.';
@@ -1026,7 +1050,7 @@ function renderChat() {
   const box = chatBoxEl;
   box.innerHTML = '';
   box.classList.toggle('chat-over', c.closed);
-  for (const m of c.msgs) box.appendChild(msgEl(m));
+  for (const m of c.msgs) box.appendChild(msgEl(m, c.name));
   $('chat-input-row').hidden = c.closed;
   $('chat-closed').hidden = !c.closed;
   $('chat-closed').textContent = c.closed
@@ -1037,21 +1061,39 @@ function renderChat() {
   scrollChatToEnd();
 }
 
-function msgEl(m) {
+const MSG_STATUS = { sending: () => '', waiting: name => `waiting for ${name}…`, failed: () => 'not delivered' };
+
+function msgEl(m, name) {
   const d = document.createElement('div');
-  d.className = 'msg ' + m.side;
+  d.className = 'msg ' + m.side + (m.state ? ' ' + m.state : '');
+  if (m.ref) d.dataset.ref = m.ref;
   // Messages show in full, so cap blank-line padding (300 newlines = a wall)
   d.textContent = m.text.replace(/\n{3,}/g, '\n\n');
+  if (m.state && MSG_STATUS[m.state](name)) {
+    const s = document.createElement('span');
+    s.className = 'msg-status';
+    s.textContent = MSG_STATUS[m.state](name);
+    d.appendChild(s);
+  }
   return d;
 }
 
-function addChatMsg(c, side, text) {
-  const m = { side, text };
+// sending → (sent | waiting → delivered) | failed; updates the open chat in place
+function setMsgState(c, m, state) {
+  if (m.state === state) return;
+  m.state = state;
+  if (openChatId !== c.chatId || $('view-chat').hidden) return;
+  const el = chatBoxEl.querySelector(`[data-ref="${m.ref}"]`);
+  if (el) el.replaceWith(msgEl(m, c.name));
+}
+
+function addChatMsg(c, side, text, extra) {
+  const m = { side, text, ...extra };
   c.msgs.push(m);
   if (side !== 'system') c.lastAt = Date.now();
   if (openChatId === c.chatId && !$('view-chat').hidden) {
     if (side === 'them') hideTypingIndicator();
-    chatBoxEl.appendChild(msgEl(m));
+    chatBoxEl.appendChild(msgEl(m, c.name));
     if (side === 'me' || chatPinned) scrollChatToEnd();
   } else {
     if (side === 'them') c.unread++;
@@ -1099,8 +1141,10 @@ function sendMessage() {
   input.classList.remove('at-height-limit');
   $('chat-char-count').textContent = '';
   $('chat-char-count').classList.remove('visible', 'urgent');
-  queueFrame({ type: 'chat_message', chatId: c.chatId, ...seal(text, c.pubKey) });
-  addChatMsg(c, 'me', text);
+  // The ref comes back in the server's ack, so this message's state can follow it
+  const ref = Math.random().toString(36).slice(2, 12);
+  addChatMsg(c, 'me', text, { ref, state: 'sending' });
+  queueFrame({ type: 'chat_message', chatId: c.chatId, ref, ...seal(text, c.pubKey) });
 }
 
 // The server refills one message token every 300ms. Pace frames slightly
@@ -1113,6 +1157,7 @@ function flushOutbox() {
   const wait = Math.max(0, _lastSentAt + SEND_INTERVAL_MS - Date.now());
   _outboxTimer = setTimeout(() => {
     _outboxTimer = null;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return; // offline: resumes with the session
     wsSend(_outbox.shift());
     _lastSentAt = Date.now();
     flushOutbox();

@@ -8,7 +8,7 @@ Emberline is an ephemeral chat platform with temporary profiles. This policy des
 
 ## What we do not collect
 
-We do not collect email addresses, phone numbers, real names, or any other identifying information. There is no registration and no account. We do not store chat messages — messages are relayed in real time using end-to-end encryption and are never written to disk. We have no ability to retrieve or reconstruct past conversations.
+We do not collect email addresses, phone numbers, real names, or any other identifying information. There is no registration and no account. We do not store chat messages — messages are relayed in real time using end-to-end encryption and are never written to disk. If the other person's connection drops for a moment, your messages wait for them in server memory, still encrypted, for up to 5 minutes; if they don't come back, the messages are discarded. We have no ability to retrieve or reconstruct past conversations.
 
 ## Your profile
 

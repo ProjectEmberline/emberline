@@ -115,6 +115,7 @@ const GENDERS = new Set(['', 'woman', 'man', 'trans woman (MtF)', 'trans man (Ft
 const MAX_OUTGOING_REQUESTS   = 20;   // open requests a profile has sent
 const MAX_INCOMING_REQUESTS   = 30;   // open requests a profile can receive
 const MAX_ACTIVE_CHATS        = 20;
+const MAX_QUEUED_PER_CHAT     = 50;   // messages waiting for someone who is reconnecting
 const REQUEST_TTL_MS          = envInt('REQUEST_TTL_MS', 10 * 60_000);
 const REQUEST_BURST           = 5;        // 5 requests…
 const REQUEST_REFILL_MS       = 12_000;   // …a minute
@@ -495,6 +496,7 @@ function createProfile(ws, { name, gender, interests, pubKey }) {
     outgoing: new Set(), inbound: new Set(), chats: new Set(),
     blocked: new Set(), blockedBy: new Set(), noAnswer: new Set(), noAnswerBy: new Set(),
     graceTimer: null, watch: { on: false, interests: [], last: '' },
+    queue: new Map(),   // chatId → encrypted messages waiting while this profile reconnects
   };
   profiles.set(p.id, p);
   byName.set(name.toLowerCase(), p.id);
@@ -570,12 +572,14 @@ function expireRequest(r) {
 function leaveChat(c, p, reason) {
   c.open.delete(p.id);
   p.chats.delete(c.id);
+  p.queue.delete(c.id);
   if (c.ai) {
     if (c.bot) { send(c.bot, { type: 'partner_left' }); c.bot._aiChat = null; c.bot = null; }
     chats.delete(c.id);
     return;
   }
   const other = profiles.get(partnerId(c, p.id));
+  other?.queue.delete(c.id);   // nobody will read them any more
   if (other && c.open.has(other.id)) toProfile(other, { type: 'chat_ended', chatId: c.id, reason });
   if (c.open.size === 0) chats.delete(c.id);
 }
@@ -873,6 +877,12 @@ function handleHumanFrame(ws, msg) {
     p.watch.last = '';
     send(ws, { type: 'profile_ok', ...summary(p), resumeToken: p.resumeToken });
     send(ws, stateSnapshot(p));
+    // Messages that arrived while this profile was away, in order
+    for (const [chatId, waiting] of p.queue) {
+      if (!chats.get(chatId)?.open.has(p.id)) continue;
+      for (const m of waiting) send(ws, { type: 'chat_message', chatId, ciphertext: m.ciphertext, nonce: m.nonce });
+    }
+    p.queue.clear();
     if (wasAway) {
       for (const cid of p.chats) {
         const c = chats.get(cid);
@@ -1012,15 +1022,32 @@ function handleHumanFrame(ws, msg) {
     case 'chat_message': {
       const c = typeof msg.chatId === 'string' && chats.get(msg.chatId);
       if (!c || !c.open.has(me.id)) return;
+      // The sender's own label for this message, echoed back in the ack
+      const ref = typeof msg.ref === 'string' && /^[A-Za-z0-9]{1,16}$/.test(msg.ref) ? msg.ref : undefined;
       // Only relay E2EE frames — plaintext relay intentionally absent.
       // Oversized or malformed frames are rejected, never truncated.
-      if (!validCiphertext(msg, MAX_CIPHERTEXT_B64)) return err('message_rejected', { chatId: c.id });
-      if (!isActiveChat(c)) return err('chat_closed', { chatId: c.id });
-      if (takeToken(ws, '_msgBucket', MSG_BURST, MSG_REFILL_MS)) return err('rate_limited', { chatId: c.id });
-      if (c.ai) { send(c.bot, { type: 'message', ciphertext: msg.ciphertext, nonce: msg.nonce }); break; }
+      if (!validCiphertext(msg, MAX_CIPHERTEXT_B64)) return err('message_rejected', { chatId: c.id, ref });
+      if (!isActiveChat(c)) return err('chat_closed', { chatId: c.id, ref });
+      if (takeToken(ws, '_msgBucket', MSG_BURST, MSG_REFILL_MS)) return err('rate_limited', { chatId: c.id, ref });
+      if (c.ai) {
+        send(c.bot, { type: 'message', ciphertext: msg.ciphertext, nonce: msg.nonce });
+        send(ws, { type: 'chat_ack', chatId: c.id, ref, queued: false });
+        break;
+      }
       const other = profiles.get(partnerId(c, me.id));
-      if (!other?.ws) return err('partner_away', { chatId: c.id });
+      if (!other) return err('chat_closed', { chatId: c.id, ref });
+      if (!other.ws) {
+        // Reconnecting: the message waits, still encrypted, until they're back
+        // (resume) or gone (deleteProfile drops it with the rest of the profile)
+        const waiting = other.queue.get(c.id) || [];
+        if (waiting.length >= MAX_QUEUED_PER_CHAT) return err('partner_away', { chatId: c.id, ref });
+        waiting.push({ ciphertext: msg.ciphertext, nonce: msg.nonce });
+        other.queue.set(c.id, waiting);
+        send(ws, { type: 'chat_ack', chatId: c.id, ref, queued: true });
+        break;
+      }
       send(other.ws, { type: 'chat_message', chatId: c.id, ciphertext: msg.ciphertext, nonce: msg.nonce });
+      send(ws, { type: 'chat_ack', chatId: c.id, ref, queued: false });
       break;
     }
 
@@ -1258,7 +1285,7 @@ const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <p class="date">Effective date: ${POLICY_EFFECTIVE_DATE} &nbsp;·&nbsp; Jurisdiction: Switzerland</p>
 <p>Emberline is an ephemeral chat platform with temporary profiles. This policy describes what data we collect, what we do not collect, and your rights under Swiss law (nFADP).</p>
 <h2>What we do not collect</h2>
-<p>We do not collect email addresses, phone numbers, real names, or any other identifying information. There is no registration and no account. We do not store chat messages — messages are relayed in real time using end-to-end encryption and are never written to disk. We have no ability to retrieve or reconstruct past conversations.</p>
+<p>We do not collect email addresses, phone numbers, real names, or any other identifying information. There is no registration and no account. We do not store chat messages — messages are relayed in real time using end-to-end encryption and are never written to disk. If the other person's connection drops for a moment, your messages wait for them in server memory, still encrypted, for up to 5 minutes; if they don't come back, the messages are discarded. We have no ability to retrieve or reconstruct past conversations.</p>
 <h2>Your profile</h2>
 <p>To go online you create a temporary profile: a username, optionally a gender, and up to ten interests. Your profile is visible to anyone who is online at the same time: it can appear in their random list of people online, and in their searches for one of your interests. It is held only in the server's memory, never written to disk, and deleted when you log off, when you close or reload the page, after 30 minutes without activity, 5 minutes after your connection drops, or when the server restarts.</p>
 <p>Other people can see, remember or copy what your profile shows while you are online; we cannot delete what they saw. Gender is optional. It, and your interests, can reveal sensitive information about you (for example that you are transgender, or your religion, health or orientation). Only add what you are comfortable showing to strangers, and nothing that identifies you.</p>

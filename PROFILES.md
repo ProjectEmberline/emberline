@@ -138,7 +138,7 @@ ignored, as today.
 | `request_withdraw` | `requestId` | recipient gets `request_gone` |
 | `request_answer` | `requestId, accept` | accept → `chat_open` to both. Decline → recipient's copy removed; **sender hears nothing** until expiry |
 | `set_accepting` | `on` | toggles the switch; → `accepting {on}`; existing incoming requests stay |
-| `chat_message` | `chatId, ciphertext, nonce` | relayed as today; rejected if the partner has ended the chat |
+| `chat_message` | `chatId, ref?, ciphertext, nonce` | → `chat_ack {chatId, ref, queued}`. If the partner is reconnecting, the message waits (encrypted, ≤ 50 per chat) and is delivered on their `resume`, else dropped with their profile. Errors carry `ref`: `chat_closed`, `partner_away` (queue full), `rate_limited`, `message_rejected` |
 | `chat_typing` | `chatId` | relayed |
 | `chat_end` | `chatId` | your side closes; partner gets `chat_ended {chatId, reason:'ended'}` and keeps a read-only copy |
 | `block` | `profileId` | ends shared chats (partner sees `chat_ended {reason:'ended'}`, not "blocked"), drops requests both ways, hides both from each other's search |

@@ -462,6 +462,12 @@ test('an unclean drop keeps the profile for the grace period; resume restores it
   const [a, b] = await chatPair({ srv: fast });
   a.terminate();
   await until(b, 'partner_reconnecting');
+  // Messages sent meanwhile wait for a, in order
+  tx(b, { type: 'chat_message', chatId: b.chatId, ref: 'w1', ...sealed(b, a, 'are you there?') });
+  tx(b, { type: 'chat_message', chatId: b.chatId, ref: 'w2', ...sealed(b, a, 'hello?') });
+  const ack = await until(b, 'chat_ack', 2);
+  assert.deepEqual(got(b, 'chat_ack').map(x => [x.ref, x.queued]), [['w1', true], ['w2', true]]);
+  assert.equal(ack.chatId, b.chatId);
   const a2 = await client(freshIp(), {}, fast);
   tx(a2, { type: 'resume', resumeToken: a.token });
   const ok = await until(a2, 'profile_ok');
@@ -469,7 +475,11 @@ test('an unclean drop keeps the profile for the grace period; resume restores it
   assert.notEqual(ok.resumeToken, a.token, 'token rotates');
   const state = await until(a2, 'state');
   assert.deepEqual(state.chats.map(c => c.chatId), [a.chatId]);
+  await until(a2, 'chat_message', 2);
+  assert.deepEqual(got(a2, 'chat_message').map(m => opened(a, b.pub, m)), ['are you there?', 'hello?'], 'delivered on return');
   await until(b, 'partner_back');
+  tx(b, { type: 'chat_message', chatId: b.chatId, ref: 'n1', ...sealed(b, a, 'welcome back') });
+  assert.equal((await until(b, 'chat_ack', 3)).queued, false, 'straight through again');
 
   tx(a2, { type: 'resume', resumeToken: a.token }); // the old token is spent
   const a3 = await client(freshIp(), {}, fast);
