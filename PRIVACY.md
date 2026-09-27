@@ -12,7 +12,7 @@ We do not collect email addresses, phone numbers, real names, or any other ident
 
 ## Your profile
 
-To go online you create a temporary profile: a username, optionally a gender, and up to ten interests. Your profile is visible to anyone who is online at the same time and searches for one of your interests. It is held only in the server's memory, never written to disk, and deleted when you log off, when you close or reload the page, after 30 minutes without activity, 5 minutes after your connection drops, or when the server restarts.
+To go online you create a temporary profile: a username, optionally a gender, and up to ten interests. Your profile is visible to anyone who is online at the same time: it can appear in their random list of people online, and in their searches for one of your interests. It is held only in the server's memory, never written to disk, and deleted when you log off, when you close or reload the page, after 30 minutes without activity, 5 minutes after your connection drops, or when the server restarts.
 
 Other people can see, remember or copy what your profile shows while you are online; we cannot delete what they saw. Gender is optional. It, and your interests, can reveal sensitive information about you (for example that you are transgender, or your religion, health or orientation). Only add what you are comfortable showing to strangers, and nothing that identifies you.
 

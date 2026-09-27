@@ -130,8 +130,9 @@ ignored, as today.
 |---|---|---|
 | `profile_create` | `name, gender, interests[], pubKey, token, nonce` | PoW on the socket's first profile. → `profile_ok {id, name, gender, interests, pubKey, accepting, resumeToken}`. Errors: `name_taken`, `name_reserved`, `name_invalid`, `interests_invalid`, `gender_invalid`, `invalid_key`, `too_many_profiles`, `server_busy`, `slow_down {retryMs}` (paced after validation, 5 then 1 per 3 s) |
 | `resume` | `resumeToken` | within the grace period, or a tab handover. → `profile_ok` + `state` snapshot; the previous socket gets `replaced` and is closed |
-| `counts_watch` | `interests[]` (≤ 40), `on` | subscribe to buckets for these interests plus the top 12; `on:false` pauses while the tab is hidden |
+| `counts_watch` | `interests[]` (≤ 40), `on` | subscribe to buckets for these interests plus the top 50; `on:false` pauses while the tab is hidden |
 | `search` | `interest` | → `results {interest, bucket, people[≤20]}`; each person: `id, name, gender, interests, pubKey, accepting, askedBefore`. Random sample; excludes self and blocks both ways. Rate: 10, then 1 per 3 s (shared with `interests_all`) |
+| `browse` | `exclude[]` (≤ 40 ids) | → `browse_results {people[≤20]}`: a random sample of everyone online (not you, not the excluded, no blocks either way), shown below the interest results. Shares the search rate limit |
 | `interests_all` | – | → `interests_all {list: [[interest, bucket]] ≤ 200}` for "show all" |
 | `request_send` | `to, ciphertext, nonce` | → `request_sent {requestId, to, expiresIn}`. Errors (each with `to`): `offline` (also when blocked, deliberately), `message_rejected` (over 200 chars), `already_chatting`, `already_pending`, `asked_before`, `not_accepting`, `outgoing_full`, `chats_full`, `busy` (recipient has 30), `rate_limited {retryMs}`, `server_busy` |
 | `request_withdraw` | `requestId` | recipient gets `request_gone` |

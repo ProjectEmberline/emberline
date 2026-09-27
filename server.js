@@ -127,7 +127,7 @@ const IDLE_WARNING_MS         = envInt('IDLE_WARNING_MS', 28 * 60_000);
 const IDLE_LOGOFF_MS          = envInt('IDLE_LOGOFF_MS', 30 * 60_000);
 const RECONNECT_GRACE_MS      = envInt('RECONNECT_GRACE_MS', 5 * 60_000);
 const COUNTS_TICK_MS          = Math.max(100, envInt('COUNTS_TICK_MS', 5_000));
-const TOP_INTERESTS           = 12;
+const TOP_INTERESTS           = 50;   // "popular now" on Discover
 const MAX_WATCHED_INTERESTS   = 40;
 const MAX_ALL_INTERESTS       = 200;
 
@@ -927,6 +927,24 @@ function handleHumanFrame(ws, msg) {
       break;
     }
 
+    // A random sample of everyone online, shown below the interest results
+    case 'browse': {
+      const wait = takeToken(ws, '_searchBucket', SEARCH_BURST, SEARCH_REFILL_MS);
+      if (wait) return err('rate_limited', { retryMs: wait });
+      const exclude = new Set(Array.isArray(msg.exclude) ? msg.exclude.slice(0, SEARCH_RESULTS * 2) : []);
+      const ids = [];
+      for (const o of profiles.values()) {
+        if (o !== me && !exclude.has(o.id) && !blockedBetween(me, o)) ids.push(o.id);
+      }
+      for (let i = 0; i < Math.min(SEARCH_RESULTS, ids.length); i++) {
+        const j = i + crypto.randomInt(ids.length - i);
+        [ids[i], ids[j]] = [ids[j], ids[i]];
+      }
+      const people = ids.slice(0, SEARCH_RESULTS).map(id => ({ ...summary(profiles.get(id)), askedBefore: me.noAnswer.has(id) }));
+      send(ws, { type: 'browse_results', people });
+      break;
+    }
+
     case 'request_send': {
       const to = typeof msg.to === 'string' && profiles.get(msg.to);
       // Blocked looks exactly like offline, so a block can't be detected
@@ -1242,7 +1260,7 @@ const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <h2>What we do not collect</h2>
 <p>We do not collect email addresses, phone numbers, real names, or any other identifying information. There is no registration and no account. We do not store chat messages — messages are relayed in real time using end-to-end encryption and are never written to disk. We have no ability to retrieve or reconstruct past conversations.</p>
 <h2>Your profile</h2>
-<p>To go online you create a temporary profile: a username, optionally a gender, and up to ten interests. Your profile is visible to anyone who is online at the same time and searches for one of your interests. It is held only in the server's memory, never written to disk, and deleted when you log off, when you close or reload the page, after 30 minutes without activity, 5 minutes after your connection drops, or when the server restarts.</p>
+<p>To go online you create a temporary profile: a username, optionally a gender, and up to ten interests. Your profile is visible to anyone who is online at the same time: it can appear in their random list of people online, and in their searches for one of your interests. It is held only in the server's memory, never written to disk, and deleted when you log off, when you close or reload the page, after 30 minutes without activity, 5 minutes after your connection drops, or when the server restarts.</p>
 <p>Other people can see, remember or copy what your profile shows while you are online; we cannot delete what they saw. Gender is optional. It, and your interests, can reveal sensitive information about you (for example that you are transgender, or your religion, health or orientation). Only add what you are comfortable showing to strangers, and nothing that identifies you.</p>
 <p>The server refuses usernames containing certain reserved words (such as "admin" or "emberline") and may refuse words on a block list in usernames and interests. These checks run in memory when you create a profile; nothing is logged.</p>
 <h2>Requests and chats</h2>

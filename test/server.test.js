@@ -288,6 +288,23 @@ test('search: random sample by interest, never yourself; counts are rounded', as
   people.forEach(s => s.close());
 });
 
+test('browse: random people online, never yourself, the excluded or the blocked', async () => {
+  const me = await profile({ srv: fast, interests: ['browseme'] });
+  const others = [];
+  for (let i = 0; i < 4; i++) others.push(await profile({ srv: fast, interests: ['browse' + i] }));
+  tx(others[3], { type: 'block', profileId: me.id }); await sleep(100);
+  tx(me, { type: 'browse', exclude: [others[0].id] });
+  const res = await until(me, 'browse_results');
+  const ids = res.people.map(p => p.id);
+  assert.ok(ids.includes(others[1].id) && ids.includes(others[2].id), 'others are listed, whatever their interests');
+  assert.ok(!ids.includes(me.id), 'not yourself');
+  assert.ok(!ids.includes(others[0].id), 'not the excluded (already shown above)');
+  assert.ok(!ids.includes(others[3].id), 'not someone who blocked you');
+  assert.ok(ids.length <= 20);
+  assert.equal(typeof res.people[0].askedBefore, 'boolean');
+  for (const s of [me, ...others]) { tx(s, { type: 'logoff' }); s.close(); }
+});
+
 test('counts are pushed again only when a bucket changes', async () => {
   const me = await profile({ srv: fast, interests: ['tickwatch'] });
   tx(me, { type: 'counts_watch', on: true, interests: [] });

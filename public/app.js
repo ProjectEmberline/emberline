@@ -103,6 +103,7 @@ const lastBuckets = new Map();
 let allInterests = null;         // [[interest, bucket]] when "show all" is open
 let showAll = false;
 let searchState = null;          // { interest, ids[], bucket, at }
+let browseState = null;          // { ids[], at }: random people online, below the results
 let aiAvailable = false;
 let openChatId = null;
 let currentTab = 'discover';
@@ -490,6 +491,20 @@ function handleMessage(msg) {
         ids.push(r.id);
       }
       searchState = { interest: msg.interest, ids, bucket: msg.bucket, at: Date.now() };
+      if (!browseState) requestBrowse();
+      renderDiscover();
+      break;
+    }
+
+    case 'browse_results': {
+      const ids = [];
+      for (const p of msg.people || []) {
+        const r = remember(p);
+        if (!r || blocked.has(r.id)) continue;
+        if (p.askedBefore) noAnswer.add(p.id);
+        ids.push(r.id);
+      }
+      browseState = { ids, at: Date.now() };
       renderDiscover();
       break;
     }
@@ -753,6 +768,30 @@ function renderResults() {
     if (p) h += personRow(p, relationAction(p));
   }
   $('results').innerHTML = h;
+  renderBrowse();
+}
+
+const ago = at => { const s = Math.round((Date.now() - at) / 1000); return s < 5 ? 'just now' : s < 60 ? s + ' s ago' : Math.round(s / 60) + ' min ago'; };
+
+// Random people online, whatever their interests; never repeats the list above
+function renderBrowse() {
+  const b = browseState;
+  if (!b) { $('browse').innerHTML = ''; return; }
+  const above = new Set(searchState ? searchState.ids : []);
+  const ids = b.ids.filter(id => !blocked.has(id) && !above.has(id));
+  let h = `<div class="meta"><span class="label">others online · random</span>
+    <span class="hint">${ago(b.at)} · <button type="button" class="link" id="btn-browse-refresh">show others</button></span></div>`;
+  if (!ids.length) h += '<div class="empty serif">Nobody else is online right now.</div>';
+  for (const id of ids) {
+    const p = people.get(id);
+    if (p) h += personRow(p, relationAction(p));
+  }
+  $('browse').innerHTML = h;
+}
+
+function requestBrowse() {
+  lastAction = 'search';
+  wsSend({ type: 'browse', exclude: searchState ? searchState.ids : [] });
 }
 
 function search(interest) {
@@ -767,6 +806,7 @@ function watchCountsFor(t) { wsSend({ type: 'counts_watch', on: true, interests:
 $('panel-discover').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (chip) return search(chip.dataset.t);
   if (e.target.id === 'btn-refresh' && searchState) return search(searchState.interest);
+  if (e.target.id === 'btn-browse-refresh') return requestBrowse();
   if (e.target.id === 'btn-all') {
     showAll = !showAll;
     if (showAll) { lastAction = 'all'; wsSend({ type: 'interests_all' }); }
@@ -1247,7 +1287,7 @@ function gone(reason) {
   clearOutbox();
   for (const map of [people, incoming, outgoing, chatMap, requestTexts]) map.clear();
   noAnswer.clear(); blocked.clear(); lastBuckets.clear();
-  counts = { buckets: {}, top: [] }; allInterests = null; showAll = false; searchState = null; pendingRequest = null;
+  counts = { buckets: {}, top: [] }; allInterests = null; showAll = false; searchState = null; browseState = null; pendingRequest = null;
   for (const m of document.querySelectorAll('.modal')) m.hidden = true;
   clearBanner();
   $('gone-title').textContent = title; $('gone-sub').textContent = sub; $('gone-text').textContent = text;
