@@ -182,24 +182,37 @@ test('only public/ is served; source, logs and dotfiles are not', async () => {
 test('CSP has no unsafe-inline and allows the page style blocks by hash', async () => {
   const csp = (await fetch(HTTP + '/')).headers.get('content-security-policy');
   assert.ok(!csp.includes('unsafe-inline'));
-  assert.match(csp, /style-src 'self'( 'sha256-[A-Za-z0-9+/=]+'){3}/);
+  assert.match(csp, /style-src 'self'( 'sha256-[A-Za-z0-9+/=]+'){2}/); // index, and the one the policy pages share
   const html = (await (await fetch(HTTP + '/')).text()).replace(/<style>[\s\S]*?<\/style>/g, '');
   assert.ok(!/\sstyle="/.test(html), 'no inline style attributes');
   const js = await (await fetch(HTTP + '/app.js')).text();
   assert.ok(!/\sstyle=\\?"/.test(js), 'no inline style attributes built by the script either');
 });
 
-test('a malformed report gets a plain 400: no stack trace sent or logged', async () => {
+test('there is no HTTP report endpoint: reports only come from a profile, over the socket', async () => {
   const res = await fetch(HTTP + '/report', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': freshIp() },
-    body: '{"reason":"spam","details":"my name is Alice" x}',
+    body: '{"reason":"spam","details":"my name is Alice"}',
   });
-  assert.equal(res.status, 400);
-  const body = await res.text();
-  assert.doesNotMatch(body, /SyntaxError|node_modules|Alice/);
+  assert.equal(res.status, 404);
   await sleep(100);
-  assert.doesNotMatch(main.output, /SyntaxError|Alice/);
+  assert.ok(!fs.existsSync(path.join(logDir, 'reports.log')) || !fs.readFileSync(path.join(logDir, 'reports.log'), 'utf8').includes('Alice'));
+});
+
+// PRIVACY.md and TERMS.md mirror the pages the server sends. Compared as plain
+// text, so the two can't drift apart unnoticed.
+test('PRIVACY.md and TERMS.md say the same as the served pages', async () => {
+  const words = t => t.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/[·*>]/g, ' ').replace(/\s+/g, ' ').trim();
+  for (const [url, file] of [['/privacy', 'PRIVACY.md'], ['/terms', 'TERMS.md']]) {
+    const html = await (await fetch(HTTP + url)).text();
+    const served = words(html.slice(html.indexOf('<h1>'), html.indexOf('<hr>')).replace(/<\/?a\b[^>]*>/g, '').replace(/<[^>]+>/g, ' '));
+    const md = fs.readFileSync(path.join(ROOT, file), 'utf8')
+      .replace(/^> This document mirrors.*$/m, '')          // the note that it is a mirror
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')             // [text](link) → text
+      .replace(/^#+ /gm, '').replace(/^- /gm, '');
+    assert.equal(words(md), served, file + ' differs from ' + url);
+  }
 });
 
 test('client IP comes from the proxy-added X-Forwarded-For entry', async () => {
@@ -284,6 +297,7 @@ test('search: random sample by interest, never yourself; counts are rounded', as
   const counts = await until(me, 'counts');
   assert.equal(counts.buckets.searchtopic, '1–4');
   assert.equal(counts.buckets.nobodyhere, '0');
+  assert.equal(counts.buckets.x0, '0', 'your own interest counts the others, not you');
   assert.ok(Array.isArray(counts.top));
   people.forEach(s => s.close());
 });
@@ -312,9 +326,11 @@ test('counts are pushed again only when a bucket changes', async () => {
   await sleep(400);
   assert.equal(got(me, 'counts').length, 1, 'no change, no push');
   const more = [];
-  for (let i = 0; i < 4; i++) more.push(await profile({ srv: fast, interests: ['tickwatch'] }));
-  const c = await until(me, 'counts', 2);
-  assert.equal(c.buckets.tickwatch, '5–9');
+  for (let i = 0; i < 5; i++) more.push(await profile({ srv: fast, interests: ['tickwatch'] }));
+  // Alone it reads '0' (you aren't counted on your own interest), then '1–4', then '5–9'
+  for (let t = 0; t < 2000 && got(me, 'counts').at(-1).buckets.tickwatch !== '5–9'; t += 20) await sleep(20);
+  assert.equal(got(me, 'counts').at(-1).buckets.tickwatch, '5–9');
+  assert.ok(got(me, 'counts').length <= 3, 'one push per bucket change at most');
   tx(me, { type: 'counts_watch', on: false });
   for (const s of [...more, me]) { tx(s, { type: 'logoff' }); s.close(); }
 });
@@ -510,6 +526,25 @@ test('idle: a warning, then log off; activity resets the timer', async () => {
   assert.equal((await until(b, 'logged_off', 1, 3000)).reason, 'idle');
   assert.equal(got(a, 'logged_off').length, 0, 'still here');
   tx(a, { type: 'logoff' }); a.close(); b.close();
+});
+
+test('idle: a search the page repeats by itself does not count as activity', async () => {
+  const a = await profile({ srv: fast });
+  const timer = setInterval(() => tx(a, { type: 'search', interest: 'chess', auto: true }), 300);
+  try {
+    await until(a, 'idle_warning', 1, 4000);
+    assert.ok(got(a, 'results').length > 0, 'the searches were answered');
+  } finally { clearInterval(timer); }
+  tx(a, { type: 'logoff' }); a.close();
+});
+
+test('an error names the frame it answers', async () => {
+  const a = await profile();
+  tx(a, { type: 'report', profileId: a.id, reason: 'nonsense' });
+  const e = await until(a, 'error');
+  assert.equal(e.code, 'invalid_reason');
+  assert.equal(e.re, 'report');
+  a.close();
 });
 
 test('everything is released once all profiles are gone', async () => {

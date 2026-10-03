@@ -107,14 +107,16 @@ let browseState = null;          // { ids[], at }: random people online, below t
 let aiAvailable = false;
 let openChatId = null;
 let currentTab = 'discover';
-let lastAction = '';             // for errors that don't say what they belong to
-let pendingRequest = null;       // { toId, text } while the request dialog waits for the server
+let pendingRequest = null;       // { toId, text } from "send" until the server answers
+const requestDrafts = new Map(); // person id → a request message typed but not sent yet
+let autoSearch = false;          // the next results answer a refresh the page started itself
 
 // ── Views ─────────────────────────────────────────────────────────────────────
 
 function show(view) {
   for (const v of ['entry', 'main', 'chat', 'gone']) $('view-' + v).hidden = v !== view;
   document.body.classList.toggle('is-chat', view === 'chat');
+  document.body.classList.toggle('online', !!me);
   if (view !== 'chat') openChatId = null;
   $('tabs').hidden = !me || (view !== 'main' && view !== 'chat');
   $('btn-logoff').hidden = !me;
@@ -130,6 +132,7 @@ function selectTab(name) {
   currentTab = name;
   for (const t of ['discover', 'requests', 'messages']) {
     $('tab-' + t).setAttribute('aria-selected', String(t === name));
+    $('tab-' + t).tabIndex = t === name ? 0 : -1; // one tab stop; arrow keys move between tabs
     $('panel-' + t).hidden = t !== name;
   }
 }
@@ -141,14 +144,32 @@ function renderCurrent() {
   else renderMessages();
 }
 
-// Feedback in the page flow, never a pop-up over the tabs
+// Feedback: floats above the footer (under a chat: in the page flow), so it
+// never moves the page or covers the tabs. Something that went wrong stays longer.
 let _noteTimer = null;
-function note(text) {
+function clearNote() { clearTimeout(_noteTimer); $('note').textContent = ''; $('chat-note').textContent = ''; }
+function note(text, isError = false) {
+  clearNote();
   const el = $('view-chat').hidden ? $('note') : $('chat-note');
-  $('note').textContent = ''; $('chat-note').textContent = '';
+  el.classList.toggle('is-error', isError);
   el.textContent = text;
-  clearTimeout(_noteTimer);
-  _noteTimer = setTimeout(() => { $('note').textContent = ''; $('chat-note').textContent = ''; }, 5000);
+  _noteTimer = setTimeout(clearNote, isError ? 12_000 : 5000);
+}
+$('note').addEventListener('click', clearNote);
+
+// Replaces a list's HTML only if it changed, and keeps the keyboard focus on
+// the same button or row when it does: lists are redrawn on every live update.
+function setHtml(el, html) {
+  if (el._html === html) return;
+  const a = document.activeElement;
+  let key = null;
+  if (a && a !== el && el.contains(a)) {
+    const d = [...a.attributes].find(x => x.name.startsWith('data-'));
+    key = a.id ? '#' + CSS.escape(a.id) : d ? `[${d.name}="${CSS.escape(d.value)}"]` : null;
+  }
+  el._html = html;
+  el.innerHTML = html;
+  if (key) el.querySelector(key)?.focus();
 }
 
 function updateTagline() {
@@ -165,8 +186,9 @@ function updateBadges() {
   for (const c of chatMap.values()) nMsg += c.unread || (c.isNew ? 1 : 0);
   $('badge-requests').textContent = nReq || '';
   $('badge-messages').textContent = nMsg || '';
-  // The only alert: a count in the page title. No sound, no notifications.
-  document.title = nReq ? `(${nReq}) Emberline` : (me ? 'Emberline' : BASE_TITLE);
+  // The only alert: a count in the page title (open requests plus unread chats).
+  // No sound, no notifications.
+  document.title = nReq + nMsg ? `(${nReq + nMsg}) Emberline` : (me ? 'Emberline' : BASE_TITLE);
   if (!$('view-chat').hidden) renderChatList();
 }
 
@@ -376,7 +398,6 @@ async function goOnline() {
       : 'Could not reach Emberline. Check your connection and try again.';
     return;
   }
-  lastAction = 'create';
   _lastCreate = frame;
   wsSend(frame);
 }
@@ -443,7 +464,6 @@ async function tryResume() {
   if (Date.now() > _resumeDeadline) return gone('timeout');
   try {
     await connect();
-    lastAction = 'resume';
     wsSend({ type: 'resume', resumeToken: me.resumeToken });
   } catch {
     scheduleResume();
@@ -485,10 +505,15 @@ function handleMessage(msg) {
 
     case 'state': reconcile(msg); break;
 
-    case 'counts':
+    case 'counts': {
+      const watched = searchState && searchState.interest;
+      const before = watched && counts.buckets[watched];
       counts = { buckets: msg.buckets || {}, top: Array.isArray(msg.top) ? msg.top : [] };
+      // More or fewer people on the interest you're looking at: fetch the list again
+      if (watched && before && counts.buckets[watched] && counts.buckets[watched] !== before) refreshSearch();
       if (currentTab === 'discover') renderDiscover();
       break;
+    }
 
     case 'interests_all':
       allInterests = Array.isArray(msg.list) ? msg.list : [];
@@ -503,6 +528,14 @@ function handleMessage(msg) {
         if (p.askedBefore) noAnswer.add(p.id);
         ids.push(r.id);
       }
+      // A refresh the page did by itself keeps the people already shown where
+      // they are; anyone new goes below them
+      if (autoSearch && searchState && searchState.interest === msg.interest) {
+        const fresh = new Set(ids);
+        const kept = searchState.ids.filter(id => fresh.has(id));
+        ids.splice(0, ids.length, ...kept, ...ids.filter(id => !kept.includes(id)));
+      }
+      autoSearch = false;
       searchState = { interest: msg.interest, ids, bucket: msg.bucket, at: Date.now() };
       if (!browseState) requestBrowse();
       renderDiscover();
@@ -524,8 +557,9 @@ function handleMessage(msg) {
 
     case 'request_sent': {
       const pr = pendingRequest && pendingRequest.toId === msg.to ? pendingRequest : null;
-      outgoing.set(msg.requestId, { requestId: msg.requestId, toId: msg.to, text: pr ? pr.text : '', expiresAt: Date.now() + (msg.expiresIn || 0), state: 'pending' });
-      if (pr) { pendingRequest = null; closeModal('modal-request'); }
+      outgoing.set(msg.requestId, { requestId: msg.requestId, toId: msg.to, text: pr ? pr.text : '', at: Date.now(), expiresAt: Date.now() + (msg.expiresIn || 0), state: 'pending' });
+      requestDrafts.delete(msg.to);
+      if (pr) { pendingRequest = null; if (_requestTo === msg.to) closeModal('modal-request'); }
       const p = people.get(msg.to);
       note(`Request sent to ${p ? p.name : 'them'}. You'll find it under requests.`);
       renderCurrent();
@@ -537,7 +571,7 @@ function handleMessage(msg) {
       if (!from || blocked.has(from.id)) break;
       const text = unseal(msg, from.pubKey);
       if (text === null) break; // not encrypted by that person: ignore it
-      incoming.set(msg.requestId, { requestId: msg.requestId, fromId: from.id, text, expiresAt: Date.now() + (msg.expiresIn || 0) });
+      incoming.set(msg.requestId, { requestId: msg.requestId, fromId: from.id, text, at: Date.now(), expiresAt: Date.now() + (msg.expiresIn || 0) });
       requestTexts.set(from.id, text);
       updateBadges();
       renderCurrent();
@@ -688,11 +722,11 @@ function handleError(msg) {
     if (code === 'not_accepting' && p) p.accepting = false;
     if (code === 'asked_before') noAnswer.add(msg.to);
     const text = REQUEST_ERRORS[code](name);
-    if (pendingRequest && pendingRequest.toId === msg.to && !$('modal-request').hidden) {
+    if (pendingRequest && pendingRequest.toId === msg.to) pendingRequest = null;
+    if (_requestTo === msg.to && !$('modal-request').hidden) {
       $('request-err').textContent = text;
       $('btn-request-send').disabled = false;
-      pendingRequest = null;
-    } else note(text);
+    } else note(text, true);
     renderCurrent();
     return;
   }
@@ -709,7 +743,9 @@ function handleError(msg) {
     if (c) addChatMsg(c, 'system', text);
     return;
   }
-  if (lastAction === 'create' && !me) {
+  // Everything else: the server names the frame the error answers
+  const re = msg.re;
+  if (re === 'profile_create' && !me) {
     if (code === 'slow_down') { setTimeout(() => wsSend(_lastCreate), (Number(msg.retryMs) || 3000) + 100); return; }
     if (code === 'challenge_expired') { wsVerified = false; ws && (ws._intentionalClose = true, ws.close()); ws = null; goOnline(); return; }
     const [field, text] = CREATE_ERRORS[code] || ['err-go', 'Something went wrong. Please try again.'];
@@ -719,17 +755,19 @@ function handleError(msg) {
     return;
   }
   if (code === 'resume_failed') return gone('timeout');
-  if (lastAction === 'ai') {
+  if (re === 'ai_start') {
     note(code === 'ai_unavailable' ? 'The AI is busy right now. Try again in a moment.'
       : code === 'ai_already_open' ? 'You already have a chat with the AI open. Find it under messages.'
       : code === 'chats_full' ? REQUEST_ERRORS.chats_full()
-      : 'The AI chat could not start. Try again in a moment.');
+      : 'The AI chat could not start. Try again in a moment.', true);
     if (code === 'ai_unavailable') { aiAvailable = false; renderCurrent(); }
     return;
   }
-  if (lastAction === 'report') { $('report-err').textContent = code === 'rate_limited' ? 'Too many reports from your network. Try again later.' : 'Could not send the report.'; return; }
-  if (lastAction === 'accept' && code === 'chats_full') { note(REQUEST_ERRORS.chats_full()); return; }
-  if (code === 'rate_limited') note('Slow down a little and try again.');
+  if (re === 'report') { $('report-err').textContent = code === 'rate_limited' ? 'Too many reports from your network. Try again later.' : 'Could not send the report.'; return; }
+  if (re === 'request_answer' && code === 'chats_full') { note(REQUEST_ERRORS.chats_full(), true); return; }
+  // A refresh the page did by itself and that was paced: nothing to tell anyone
+  if (re === 'search' && autoSearch) { autoSearch = false; return; }
+  if (code === 'rate_limited') note('Slow down a little and try again.', true);
 }
 
 // ── Encryption ────────────────────────────────────────────────────────────────
@@ -764,16 +802,16 @@ function chipHtml(t, b) {
   const sel = searchState && searchState.interest === t;
   const size = CHIP_SIZE[b] ? ' ' + CHIP_SIZE[b] : '';
   const mine = me && me.interests.includes(t) ? ' mine' : '';
-  return `<button type="button" class="chip${size}${mine}${sel ? ' sel' : ''}${changed ? ' flash' : ''}" data-t="${esc(t)}">${esc(t)} <span class="n">${esc(b)}</span></button>`;
+  return `<button type="button" class="chip${size}${mine}${sel ? ' sel' : ''}${changed ? ' flash' : ''}" data-t="${esc(t)}"${sel ? ' aria-pressed="true"' : ''}>${esc(t)} <span class="n">${esc(b)}</span></button>`;
 }
 
 function renderDiscover() {
   if (!me) return;
-  $('chips-mine').innerHTML = me.interests.map(t => chipHtml(t, counts.buckets[t] || '…')).join('');
+  setHtml($('chips-mine'), me.interests.map(t => chipHtml(t, counts.buckets[t] || '…')).join(''));
   let top;
   if (showAll && allInterests) top = allInterests.filter(([t]) => !me.interests.includes(t));
   else top = counts.top.filter(t => !me.interests.includes(t)).map(t => [t, counts.buckets[t] || '…']);
-  $('chips-top').innerHTML = top.map(([t, b]) => chipHtml(t, b)).join('') || '<span class="hint">Nobody else online yet.</span>';
+  setHtml($('chips-top'), top.map(([t, b]) => chipHtml(t, b)).join('') || '<span class="hint">Fills up as people come online.</span>');
   $('top-label').textContent = showAll ? `all interests online${allInterests ? ' · ' + allInterests.length : ''}` : 'popular now';
   $('btn-all').textContent = showAll ? 'show fewer' : 'show all';
   setTimeout(() => document.querySelectorAll('.chip.flash').forEach(e => e.classList.remove('flash')), 700);
@@ -788,7 +826,7 @@ function renderDiscover() {
 function relationAction(p) {
   const chat = [...chatMap.values()].find(c => c.partnerId === p.id && !c.closed);
   if (chat) return `<button type="button" class="ghost accent" data-open="${esc(chat.chatId)}">open chat</button>`;
-  if ([...outgoing.values()].some(r => r.toId === p.id && r.state === 'pending')) return '<span class="ghost done">requested</span>';
+  if ([...outgoing.values()].some(r => r.toId === p.id && r.state === 'pending')) return '<span class="ghost done">✓ requested</span>';
   if ([...incoming.values()].some(r => r.fromId === p.id)) return '<button type="button" class="ghost accent" data-goto="requests">sent you a request</button>';
   if (p.gone) return '<span class="hint">no longer online</span>';
   if (noAnswer.has(p.id)) return '<span class="hint">no answer earlier</span>';
@@ -796,51 +834,67 @@ function relationAction(p) {
   return `<button type="button" class="ghost accent" data-req="${esc(p.id)}">request</button>`;
 }
 
-function renderResults() {
-  const s = searchState;
-  if (!s) { $('results').innerHTML = ''; return; }
-  const secs = Math.round((Date.now() - s.at) / 1000);
-  // A random sample from the server; most in common first
-  const ids = s.ids.filter(id => !blocked.has(id) && people.has(id))
-    .sort((a, b) => sharedCount(people.get(b)) - sharedCount(people.get(a)));
-  let h = `<div class="meta first"><span class="label"><em>${esc(s.interest)}</em> · ${esc(s.bucket)} online</span>
-    <span class="hint">${ids.length ? `${ids.length} shown, most in common first · ` : ''}${secs < 5 ? 'just now' : secs < 60 ? secs + ' s ago' : Math.round(secs / 60) + ' min ago'} · <button type="button" class="link" id="btn-refresh">refresh</button></span></div>`;
-  if (!ids.length) h += '<div class="empty serif">No one else online with this interest right now. The count updates live, so check back.</div>';
-  h += '<div class="cards">' + ids.map(id => { const p = people.get(id); return personRow(p, relationAction(p)); }).join('') + '</div>';
-  $('results').innerHTML = h;
-  renderBrowse();
-}
-
 const ago = at => { const s = Math.round((Date.now() - at) / 1000); return s < 5 ? 'just now' : s < 60 ? s + ' s ago' : Math.round(s / 60) + ' min ago'; };
 
 // Random people online, whatever their interests; never repeats the list above
-function renderBrowse() {
-  const b = browseState;
-  if (!b) { $('browse').innerHTML = ''; return; }
+function browseIds() {
   const above = new Set(searchState ? searchState.ids : []);
-  const ids = b.ids.filter(id => !blocked.has(id) && !above.has(id));
+  return browseState ? browseState.ids.filter(id => !blocked.has(id) && !above.has(id) && people.has(id)) : [];
+}
+
+function renderResults() {
+  const s = searchState;
+  if (!s) { setHtml($('results'), ''); return renderBrowse(false); }
+  // A random sample from the server; most in common first
+  const ids = s.ids.filter(id => !blocked.has(id) && people.has(id))
+    .sort((a, b) => sharedCount(people.get(b)) - sharedCount(people.get(a)));
+  const alone = !ids.length && !!browseState && !browseIds().length; // nobody at all: say it once
+  let h = `<div class="meta first"><span class="label"><em>${esc(s.interest)}</em> · ${esc(s.bucket)} online</span>
+    <span class="hint">${ids.length ? `${ids.length} shown, most in common first · ` : ''}${ago(s.at)} · <button type="button" class="link" id="btn-refresh">refresh</button></span></div>`;
+  if (alone) {
+    h += `<div class="empty-state floe lo"><p class="serif">You're the only one here right now.</p>
+      <p>People show up on this page the moment they come online, and the counts on your interests update live. Keep the page open.</p>
+      ${aiAvailable ? '<button type="button" class="ghost accent" data-ai="1">chat with the AI meanwhile</button>' : ''}</div>`;
+  } else if (!ids.length) {
+    h += `<div class="empty serif">No one else online with this interest right now. ${counts.top.some(t => !me.interests.includes(t)) ? 'Try a popular one, or say hello to someone below.' : 'Say hello to someone below.'}</div>`;
+  }
+  h += '<div class="cards">' + ids.map(id => { const p = people.get(id); return personRow(p, relationAction(p)); }).join('') + '</div>';
+  setHtml($('results'), h);
+  renderBrowse(alone);
+}
+
+function renderBrowse(alone) {
+  const b = browseState;
+  if (!b || alone) { setHtml($('browse'), ''); return; }
+  const ids = browseIds();
   let h = `<div class="meta${searchState ? '' : ' first'}"><span class="label">others online · random</span>
     <span class="hint">${ago(b.at)} · <button type="button" class="link" id="btn-browse-refresh">show others</button></span></div>`;
-  if (!ids.length) h += '<div class="empty serif">Nobody else is online right now.</div>';
-  h += '<div class="cards">';
-  for (const id of ids) {
-    const p = people.get(id);
-    if (p) h += personRow(p, relationAction(p));
-  }
-  $('browse').innerHTML = h + '</div>';
+  if (!ids.length) h += `<div class="empty serif">${searchState && searchState.ids.length ? 'Nobody else besides the people above.' : 'Nobody else is online right now.'}</div>`;
+  h += '<div class="cards">' + ids.map(id => { const p = people.get(id); return personRow(p, relationAction(p)); }).join('') + '</div>';
+  setHtml($('browse'), h);
 }
 
 function requestBrowse() {
-  lastAction = 'search';
   wsSend({ type: 'browse', exclude: searchState ? searchState.ids : [] });
 }
 
 function search(interest) {
   const t = cleanTag(interest);
   if (t.length < 2) return;
-  lastAction = 'search';
+  autoSearch = false;
   if (!searchState || searchState.interest !== t) watchCountsFor(t);
   wsSend({ type: 'search', interest: t });
+}
+// The page keeps the open results current by itself. Marked `auto`, so the
+// server doesn't take it for you doing something (the idle timer keeps running).
+// Only while the whole list fits in one answer; a bigger one is a random sample
+// and would reshuffle under your hands.
+function refreshSearch() {
+  const s = searchState;
+  if (!s || !me || currentTab !== 'discover' || $('view-main').hidden || document.visibilityState !== 'visible') return;
+  if (!['0', '1–4', '5–9'].includes(s.bucket) || document.querySelector('.modal:not([hidden])')) return;
+  autoSearch = true;
+  wsSend({ type: 'search', interest: s.interest, auto: true });
 }
 function watchCountsFor(t) { wsSend({ type: 'counts_watch', on: true, interests: [t] }); }
 
@@ -850,10 +904,10 @@ $('panel-discover').addEventListener('click', e => {
   if (e.target.id === 'btn-browse-refresh') return requestBrowse();
   if (e.target.id === 'btn-all') {
     showAll = !showAll;
-    if (showAll) { lastAction = 'all'; wsSend({ type: 'interests_all' }); }
+    if (showAll) wsSend({ type: 'interests_all' });
     return renderDiscover();
   }
-  if (e.target.id === 'btn-ai') return startAi();
+  if (e.target.id === 'btn-ai' || e.target.closest('[data-ai]')) return startAi();
   const r = e.target.closest('[data-req]'); if (r) return openRequestDialog(r.dataset.req);
   const o = e.target.closest('[data-open]'); if (o) return openChat(o.dataset.open);
   if (e.target.closest('[data-goto]')) return tab('requests');
@@ -869,7 +923,6 @@ $('search-input').addEventListener('keydown', e => {
 function startAi() {
   const existing = [...chatMap.values()].find(c => c.ai && !c.closed);
   if (existing) return openChat(existing.chatId);
-  lastAction = 'ai';
   wsSend({ type: 'ai_start' });
 }
 
@@ -879,16 +932,16 @@ let _requestTo = null;
 function openRequestDialog(id) {
   const p = people.get(id);
   if (!p) return;
-  if ([...outgoing.values()].filter(r => r.state === 'pending').length >= MAX_OUTGOING) return note(REQUEST_ERRORS.outgoing_full());
-  if (activeChatCount() >= MAX_ACTIVE_CHATS) return note(REQUEST_ERRORS.chats_full());
+  if ([...outgoing.values()].filter(r => r.state === 'pending').length >= MAX_OUTGOING) return note(REQUEST_ERRORS.outgoing_full(), true);
+  if (activeChatCount() >= MAX_ACTIVE_CHATS) return note(REQUEST_ERRORS.chats_full(), true);
   _requestTo = id;
   const shared = (p.interests || []).filter(t => me.interests.includes(t));
   $('request-title').textContent = `Chat with ${p.name}?`;
   $('request-why').textContent = `${shared.length ? 'You both like ' + shared.join(', ') + '. ' : ''}They'll see your profile and your message, and can accept or decline.`;
   $('request-lead2').textContent = `It's all ${p.name} sees when deciding whether to accept.`;
-  $('request-text').value = '';
+  $('request-text').value = requestDrafts.get(id) || ''; // what you typed before closing the dialog
   $('request-err').textContent = '';
-  $('btn-request-send').disabled = false;
+  $('btn-request-send').disabled = !!(pendingRequest && pendingRequest.toId === id);
   updateRequestCount();
   openModal('modal-request');
   $('request-text').focus();
@@ -904,7 +957,11 @@ function updateRequestCount() {
     : `${REQUEST_MIN - n} more character${REQUEST_MIN - n === 1 ? '' : 's'} needed · ${n} / ${REQUEST_MIN} minimum`;
   $('btn-request-send').classList.toggle('dim', !ok);
 }
-$('request-text').addEventListener('input', () => { updateRequestCount(); $('request-err').textContent = ''; });
+$('request-text').addEventListener('input', () => {
+  updateRequestCount(); $('request-err').textContent = '';
+  const v = $('request-text').value;
+  if (v.trim()) requestDrafts.set(_requestTo, v); else requestDrafts.delete(_requestTo);
+});
 
 function sendRequest() {
   const p = people.get(_requestTo);
@@ -920,7 +977,9 @@ function sendRequest() {
   }
 }
 $('btn-request-send').addEventListener('click', sendRequest);
-$('btn-request-cancel').addEventListener('click', () => { pendingRequest = null; closeModal('modal-request'); });
+// Closing the dialog never loses anything: a request already on its way still
+// arrives (and keeps its text), an unsent draft is there when you reopen it
+$('btn-request-cancel').addEventListener('click', () => closeModal('modal-request'));
 
 // ── Requests tab ──────────────────────────────────────────────────────────────
 
@@ -931,7 +990,7 @@ function renderRequests() {
       : 'You stay visible; your profile shows "not taking requests".'}</span></span></label>`;
 
   const ins = [...incoming.values()].sort((a, b) => a.expiresAt - b.expiresAt);
-  h += `<div class="req-cols"><div><div class="meta first"><span class="label">requests for you · ${ins.length}</span><span class="hint">expire after 10 min · declining is silent: they only see "no answer" once it expires</span></div>`;
+  h += `<div class="req-cols"><div><div class="meta first"><span class="label">requests for you · ${ins.length}</span><span class="hint">expire after 10 min · a decline looks like no answer to them</span></div>`;
   if (!ins.length) h += '<div class="empty">No requests right now. When someone wants to chat, their message shows up here and you decide.</div>';
   for (const r of ins) {
     const p = people.get(r.fromId) || { name: '?', interests: [] };
@@ -953,7 +1012,7 @@ function renderRequests() {
       <div class="acts"><button type="button" class="ghost first" data-cancel="${esc(r.requestId)}">${r.state === 'pending' ? 'withdraw' : 'remove'}</button></div>
       ${r.state === 'pending' ? meltHtml(r.expiresAt) : ''}</div>`;
   }
-  $('panel-requests').innerHTML = h + '</div></div>';
+  setHtml($('panel-requests'), h + '</div></div>');
   // The page's CSP allows no inline style attributes, so the melt widths are set here
   for (const i of $('panel-requests').querySelectorAll('.melt i')) i.style.width = i.dataset.w + '%';
 }
@@ -976,8 +1035,7 @@ $('panel-requests').addEventListener('click', e => {
   const b = e.target.closest('[data-acc],[data-dec],[data-blk],[data-rep],[data-cancel]');
   if (!b) return;
   if (b.dataset.acc) {
-    if (activeChatCount() >= MAX_ACTIVE_CHATS) return note(REQUEST_ERRORS.chats_full());
-    lastAction = 'accept';
+    if (activeChatCount() >= MAX_ACTIVE_CHATS) return note(REQUEST_ERRORS.chats_full(), true);
     wsSend({ type: 'request_answer', requestId: b.dataset.acc, accept: true });
   } else if (b.dataset.dec) {
     wsSend({ type: 'request_answer', requestId: b.dataset.dec, accept: false });
@@ -1005,7 +1063,7 @@ function chatStatus(c) {
 
 // The list of chats: in the messages tab, and beside an open chat on wide screens
 function chatListHtml() {
-  let h = '<div class="meta first"><span class="label">chats</span><span class="e2e">end-to-end encrypted</span></div>';
+  let h = '<div class="meta first"><span class="label">chats</span></div>';
   const list = [...chatMap.values()].sort((a, b) => b.lastAt - a.lastAt);
   if (!list.length) h += '<div class="empty">No chats yet. Send a request from discover, or accept one under requests.</div>';
   for (const c of list) {
@@ -1014,16 +1072,16 @@ function chatListHtml() {
     const badge = c.isNew ? '<span class="badge">new</span>' : c.unread ? `<span class="badge">${c.unread}</span>` : open ? '' : '<span class="ghost">open</span>';
     const p = c.ai ? { name: c.name, gender: 'AI', interests: [] } : (people.get(c.partnerId) || { name: c.name, interests: [] });
     const cls = ' clickable' + (open ? ' open' : c.isNew || c.unread ? ' warm' : '') + (c.closed ? ' gone' : '');
-    h += personRow(p, badge, `<div class="t">${chatStatus(c)}${last ? ' · ' + esc(last.text.slice(0, 80)) : ''}</div>`, `data-open="${esc(c.chatId)}" role="button" tabindex="0"`, cls);
+    h += personRow(p, badge, `<div class="t">${chatStatus(c)}${last ? ` · <span class="pv">${esc(last.text.slice(0, 80))}</span>` : ''}</div>`, `data-open="${esc(c.chatId)}" role="button" tabindex="0"`, cls);
   }
   return h;
 }
 
 function renderMessages() {
-  $('panel-messages').innerHTML = `<div class="split"><div class="chatlist">${chatListHtml()}</div>
-    <p class="split-empty serif">Open a chat to read it here.</p></div>`;
+  setHtml($('panel-messages'), `<div class="split"><div class="chatlist">${chatListHtml()}</div>
+    <p class="split-empty serif">Open a chat to read it here.</p></div>`);
 }
-function renderChatList() { $('chat-list').innerHTML = chatListHtml(); }
+function renderChatList() { setHtml($('chat-list'), chatListHtml()); }
 for (const el of [$('panel-messages'), $('chat-list')]) {
   el.addEventListener('click', e => { const r = e.target.closest('[data-open]'); if (r) openChat(r.dataset.open); });
   el.addEventListener('keydown', e => { if (e.key === 'Enter') { const r = e.target.closest('[data-open]'); if (r) openChat(r.dataset.open); } });
@@ -1049,13 +1107,13 @@ function openedChat(msg) {
   if (sent) {
     // They accepted my request: no pop-up; the chat shows up under messages, marked new
     outgoing.delete(msg.requestId);
-    if (sent.text) c.msgs.push({ side: 'me', text: sent.text });
+    if (sent.text) c.msgs.push({ side: 'me', text: sent.text, at: sent.at });
     c.isNew = true;
     updateBadges();
     renderCurrent();
   } else {
     // I accepted theirs, or started the AI chat: open it straight away
-    if (received) { incoming.delete(msg.requestId); c.msgs.push({ side: 'them', text: received.text }); }
+    if (received) { incoming.delete(msg.requestId); c.msgs.push({ side: 'them', text: received.text, at: received.at }); }
     updateBadges();
     openChat(c.chatId);
   }
@@ -1102,6 +1160,9 @@ function renderChat() {
   scrollChatToEnd();
 }
 
+// The time on a message, in the reader's own format (14:05 or 2:05 PM)
+const clock = at => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
 const MSG_STATUS = { sending: () => '', waiting: name => `waiting for ${name}…`, failed: () => 'not delivered' };
 
 function msgEl(m, name) {
@@ -1110,6 +1171,12 @@ function msgEl(m, name) {
   if (m.ref) d.dataset.ref = m.ref;
   // Messages show in full, so cap blank-line padding (300 newlines = a wall)
   d.textContent = m.text.replace(/\n{3,}/g, '\n\n');
+  if (m.at && m.side !== 'system') {
+    const t = document.createElement('span');
+    t.className = 'msg-time';
+    t.textContent = clock(m.at);
+    d.appendChild(t);
+  }
   if (m.state && MSG_STATUS[m.state](name)) {
     const s = document.createElement('span');
     s.className = 'msg-status';
@@ -1129,13 +1196,15 @@ function setMsgState(c, m, state) {
 }
 
 function addChatMsg(c, side, text, extra) {
-  const m = { side, text, ...extra };
+  const m = { side, text, at: Date.now(), ...extra };
   c.msgs.push(m);
   if (side !== 'system') c.lastAt = Date.now();
   if (openChatId === c.chatId && !$('view-chat').hidden) {
     if (side === 'them') hideTypingIndicator();
     chatBoxEl.appendChild(msgEl(m, c.name));
     if (side === 'me' || chatPinned) scrollChatToEnd();
+    else if (side === 'them') $('btn-jump').hidden = false; // reading further up: don't yank, offer the way down
+    if (side !== 'system') renderChatList(); // the preview beside the chat
   } else {
     if (side === 'them') c.unread++;
     updateBadges();
@@ -1148,10 +1217,12 @@ function addChatMsg(c, side, text, extra) {
 // shrinks the box without scrolling it.
 const chatBoxEl = $('chat-box');
 let chatPinned = true;
-function scrollChatToEnd() { chatBoxEl.scrollTop = chatBoxEl.scrollHeight; chatPinned = true; }
+function scrollChatToEnd() { chatBoxEl.scrollTop = chatBoxEl.scrollHeight; chatPinned = true; $('btn-jump').hidden = true; }
 chatBoxEl.addEventListener('scroll', () => {
   chatPinned = chatBoxEl.scrollHeight - chatBoxEl.scrollTop - chatBoxEl.clientHeight <= 20;
+  if (chatPinned) $('btn-jump').hidden = true;
 }, { passive: true });
+$('btn-jump').addEventListener('click', () => { scrollChatToEnd(); $('chat-input').focus(); });
 new ResizeObserver(() => { if (chatPinned) scrollChatToEnd(); }).observe(chatBoxEl);
 
 let _typingTimeout = null;
@@ -1310,7 +1381,6 @@ $('btn-report-submit').addEventListener('click', () => {
   const reason = $('report-reason').value;
   if (!reason) { $('report-err').textContent = 'Select a reason.'; return; }
   const p = people.get(_reportId);
-  lastAction = 'report';
   wsSend({
     type: 'report', profileId: _reportId, name: p ? p.name : '', reason,
     details: $('report-details').value.trim().slice(0, 500),
@@ -1320,8 +1390,26 @@ $('btn-report-submit').addEventListener('click', () => {
 
 // ── Modals ────────────────────────────────────────────────────────────────────
 
-function openModal(id) { $(id).hidden = false; }
-function closeModal(id) { $(id).hidden = true; }
+// Focus moves into a dialog, Tab stays inside it, and closing it puts the focus
+// back where it was.
+const _modalReturn = new Map();
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+const focusables = m => [...m.querySelectorAll(FOCUSABLE)].filter(e => !e.closest('[hidden]'));
+function openModal(id) {
+  const m = $(id);
+  if (m.hidden) _modalReturn.set(id, document.activeElement);
+  m.hidden = false;
+  focusables(m)[0]?.focus();
+}
+function closeModal(id) {
+  const m = $(id);
+  if (m.hidden) return;
+  m.hidden = true;
+  const back = _modalReturn.get(id);
+  _modalReturn.delete(id);
+  if (back && back.isConnected) back.focus();
+}
+const openModalEl = () => [...document.querySelectorAll('.modal:not([hidden])')].pop();
 let _confirmFn = null;
 function confirmBox(title, body, okLabel, fn) {
   $('confirm-title').textContent = title;
@@ -1334,12 +1422,25 @@ function confirmBox(title, body, okLabel, fn) {
 $('btn-confirm-ok').addEventListener('click', () => { closeModal('modal-confirm'); const f = _confirmFn; _confirmFn = null; if (f) f(); });
 $('btn-confirm-cancel').addEventListener('click', () => { closeModal('modal-confirm'); _confirmFn = null; });
 for (const m of document.querySelectorAll('.modal')) {
-  m.addEventListener('click', e => { if (e.target === m) { m.hidden = true; if (m.id === 'modal-request') pendingRequest = null; } });
+  // A click beside the dialog closes it, unless something is written in it:
+  // a slip of the hand shouldn't cost a message
+  m.addEventListener('click', e => {
+    if (e.target !== m) return;
+    if ([...m.querySelectorAll('textarea')].some(t => t.value.trim())) return;
+    closeModal(m.id);
+  });
 }
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
-  for (const m of document.querySelectorAll('.modal')) m.hidden = true;
-  pendingRequest = null;
+  const m = openModalEl();
+  if (!m) return;
+  if (e.key === 'Escape') { closeModal(m.id); if (m.id === 'modal-confirm') _confirmFn = null; return; }
+  if (e.key !== 'Tab') return;
+  const f = focusables(m);
+  if (!f.length) return e.preventDefault();
+  const first = f[0], last = f[f.length - 1];
+  if (!m.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 });
 
 // ── Log off ───────────────────────────────────────────────────────────────────
@@ -1381,6 +1482,8 @@ function gone(reason) {
   for (const map of [people, incoming, outgoing, chatMap, requestTexts]) map.clear();
   noAnswer.clear(); blocked.clear(); lastBuckets.clear();
   counts = { buckets: {}, top: [] }; allInterests = null; showAll = false; searchState = null; browseState = null; pendingRequest = null;
+  requestDrafts.clear(); autoSearch = false; _modalReturn.clear(); clearNote();
+  $('btn-jump').hidden = true;
   for (const m of document.querySelectorAll('.modal')) m.hidden = true;
   clearBanner();
   $('gone-title').textContent = title; $('gone-sub').textContent = sub; $('gone-text').textContent = text;
@@ -1414,7 +1517,6 @@ function showIdleWarning(seconds) {
   render();
   clearInterval(_idleTimer);
   _idleTimer = setInterval(() => { left = Math.max(0, left - 1); if (_bannerKind === 'idle') render(); else clearInterval(_idleTimer); }, 1000);
-  if (!$('view-chat').hidden) note("You'll be logged off soon for inactivity. Send a message or go back to stay online.");
 }
 $('banner').addEventListener('click', e => {
   if (e.target.id === 'btn-still-here') { wsSend({ type: 'still_here' }); clearBanner('idle'); }
@@ -1425,9 +1527,22 @@ $('banner').addEventListener('click', e => {
 $('tab-discover').addEventListener('click', () => tab('discover'));
 $('tab-requests').addEventListener('click', () => tab('requests'));
 $('tab-messages').addEventListener('click', () => tab('messages'));
+// Arrow keys move between the tabs, as in any tab bar
+$('tabs').addEventListener('keydown', e => {
+  const order = ['discover', 'requests', 'messages'];
+  const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+  if (!step) return;
+  e.preventDefault();
+  const next = order[(order.indexOf(currentTab) + step + order.length) % order.length];
+  tab(next);
+  $('tab-' + next).focus();
+});
 
-// Expiry countdowns and "results from" stay current
-setInterval(() => { if (me && currentTab !== 'discover') renderCurrent(); }, 30_000);
+// Expiry countdowns stay current, and so do the people shown under discover
+setInterval(() => {
+  if (!me) return;
+  if (currentTab !== 'discover') renderCurrent(); else refreshSearch();
+}, 30_000);
 
 // ── Page lifecycle ────────────────────────────────────────────────────────────
 
@@ -1505,7 +1620,6 @@ if (channel) {
       updateBadges();
       try {
         await connect();
-        lastAction = 'resume';
         wsSend({ type: 'resume', resumeToken: me.resumeToken });
         if (me.interests[0]) search(me.interests[0]);
       } catch { connectionLost(); }
@@ -1596,8 +1710,8 @@ askForOtherTab();
   if (isIOS) {
     showLink();
     const modal = $('install-ios');
-    link.addEventListener('click', e => { e.preventDefault(); modal.hidden = false; });
-    $('btn-install-close').addEventListener('click', () => { modal.hidden = true; });
+    link.addEventListener('click', e => { e.preventDefault(); openModal(modal.id); });
+    $('btn-install-close').addEventListener('click', () => closeModal(modal.id));
     return;
   }
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; showLink(); });

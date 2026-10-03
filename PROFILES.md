@@ -131,7 +131,7 @@ ignored, as today.
 | `profile_create` | `name, gender, interests[], pubKey, token, nonce` | PoW on the socket's first profile. → `profile_ok {id, name, gender, interests, pubKey, accepting, resumeToken}`. Errors: `name_taken`, `name_reserved`, `name_invalid`, `interests_invalid`, `gender_invalid`, `invalid_key`, `too_many_profiles`, `server_busy`, `slow_down {retryMs}` (paced after validation, 5 then 1 per 3 s) |
 | `resume` | `resumeToken` | within the grace period, or a tab handover. → `profile_ok` + `state` snapshot; the previous socket gets `replaced` and is closed |
 | `counts_watch` | `interests[]` (≤ 40), `on` | subscribe to buckets for these interests plus the top 50; `on:false` pauses while the tab is hidden |
-| `search` | `interest` | → `results {interest, bucket, people[≤20]}`; each person: `id, name, gender, interests, pubKey, accepting, askedBefore`. Random sample; excludes self and blocks both ways. Rate: 10, then 1 per 3 s (shared with `interests_all`) |
+| `search` | `interest` | → `results {interest, bucket, people[≤20]}`; each person: `id, name, gender, interests, pubKey, accepting, askedBefore`. Random sample; excludes self and blocks both ways. Rate: 10, then 1 per 3 s (shared with `interests_all`). With `auto: true` (the page refreshing its open results by itself) it does not count as user action for the idle timer |
 | `browse` | `exclude[]` (≤ 40 ids) | → `browse_results {people[≤20]}`: a random sample of everyone online (not you, not the excluded, no blocks either way), shown below the interest results. Shares the search rate limit |
 | `interests_all` | – | → `interests_all {list: [[interest, bucket]] ≤ 200}` for "show all" |
 | `request_send` | `to, ciphertext, nonce` | → `request_sent {requestId, to, expiresIn}`. Errors (each with `to`): `offline` (also when blocked, deliberately), `message_rejected` (over 200 chars), `already_chatting`, `already_pending`, `asked_before`, `not_accepting`, `outgoing_full`, `chats_full`, `busy` (recipient has 30), `rate_limited {retryMs}`, `server_busy` |
@@ -149,13 +149,13 @@ ignored, as today.
 
 ### Server → client
 
-`profile_ok`, `state`, `counts {buckets:{interest:bucket}, top[]}` (sent only when something changed),
+`profile_ok`, `state`, `counts {buckets:{interest:bucket}, top[]}` (sent only when something changed; on your own interests the bucket counts the others, not you),
 `results`, `interests_all`, `request_in {requestId, from:{id,name,gender,interests,pubKey,accepting}, ciphertext, nonce, expiresIn}`,
 `request_sent`, `request_gone {requestId}`, `request_expired {requestId}` (sender,
 at 10 min, identical for decline and no answer), `chat_open {chatId, partner}`,
 `chat_message`, `chat_typing`, `chat_ended {chatId, reason:'ended'|'logged_off'}`,
 `partner_reconnecting {chatId}` / `partner_back {chatId}`, `idle_warning {secondsLeft}`,
-`logged_off {reason:'logoff'|'idle'|'timeout'}`, `replaced`, `accepting`, `report_ok`, `error {code, to?|chatId?}`.
+`logged_off {reason:'logoff'|'idle'|'timeout'}`, `replaced`, `accepting`, `report_ok`, `error {code, re, to?|chatId?}` (`re` is the type of the frame the error answers).
 Times are relative (`expiresIn`, `secondsLeft`), so the browser's clock doesn't matter.
 
 ### Encryption

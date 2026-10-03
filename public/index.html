@@ -24,7 +24,8 @@
   /* ── Tokens ─────────────────────────────────────────────────────────────
      "Ice floe": a calm polar night. Every segment is its own slab of ice
      with a lit top edge (the rim), 14px corners, 10px on chips and
-     messages. Ember marks you, unread and the one action. Light = daylight. */
+     messages. Ember marks you, unread and the one action, and nothing else:
+     a selection is an ice ring, links are plain ink. Light = daylight. */
   :root, [data-theme="dark"] {
     color-scheme: dark;
     --paper:        #060d17;
@@ -145,7 +146,7 @@
   .cards .person.warm, .chatlist .person.warm, .preview .person { background: var(--floe-warm); box-shadow: inset 0 1px 0 var(--rim-warm), 0 0 0 1px var(--edge-warm), var(--lift-hi); }
   .waterline { height: 1px; background: linear-gradient(90deg, transparent, var(--rail) 12%, var(--rail) 88%, transparent); }
 
-  header { padding: 20px 32px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-shrink: 0; }
+  header { padding: 20px 32px 0; display: flex; justify-content: space-between; align-items: center; gap: 6px 12px; flex-shrink: 0; }
   .logo { font-size: 1rem; letter-spacing: 0.4em; text-transform: uppercase; color: var(--ink-strong); white-space: nowrap; display: flex; align-items: center; }
   .beta {
     margin-left: 12px; padding: 3px 8px 2px; border: 1px solid var(--accent); border-radius: 999px;
@@ -156,7 +157,7 @@
   .tagline .me-name { text-transform: none; letter-spacing: 0.05em; color: var(--ink); }
   #btn-theme {
     background: transparent; border: 1px solid var(--border); color: var(--muted);
-    border-radius: 999px; width: 32px; height: 32px; font-size: 0.8125rem;
+    border-radius: 999px; width: 40px; height: 40px; font-size: 0.9375rem;
     display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: border-color .2s, color .2s;
   }
   #btn-theme:hover { border-color: var(--accent); color: var(--accent); }
@@ -176,14 +177,16 @@
     font-weight: 700; font-size: clamp(3rem, 10vw, 6.5rem); line-height: 0.92; letter-spacing: -0.04em;
     text-transform: uppercase; color: var(--ink-strong); transform: skewX(-6deg); transform-origin: left bottom;
   }
-  p.sub { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.375rem; color: var(--msg-them); }
+  p.sub { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 1.375rem; color: var(--ink); }
   .serif { font-family: 'Playfair Display', Georgia, serif; font-style: italic; }
   .label { display: block; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; font-weight: 500; }
   .trust { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); line-height: 2; }
   .hint { font-size: 0.8125rem; color: var(--muted); }
   .err { font-size: 0.8125rem; color: var(--danger); margin-top: 6px; }
   .err:empty { display: none; }
-  .link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; font-size: 0.8125rem; }
+  .link { color: var(--ink); text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 3px; font-size: 0.8125rem; }
+  .link:hover { color: var(--ink-strong); text-decoration-color: currentColor; }
+  .nb { white-space: nowrap; }
   .ok-text { color: var(--ok); } .warn-text { color: var(--warn); }
 
   /* ── Fields: grooves cut into the ice ───────────────────────────────────── */
@@ -200,20 +203,22 @@
   .search-row svg { flex: none; color: var(--muted); }
   #hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
   .tag-pill {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.18em;
-    text-transform: uppercase; padding: 7px 12px; border-radius: 10px; background: var(--accent); color: var(--on-accent); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.9375rem; font-weight: 500; letter-spacing: 0.03em;
+    padding: 6px 12px; border-radius: 10px; background: var(--accent); color: var(--on-accent); white-space: nowrap;
   }
-  .tag-pill button { color: var(--on-accent); opacity: .7; font-size: 1rem; line-height: 1; }
+  /* The × is small to look at and big to hit: the padding is pulled back in by the margin */
+  .tag-pill button { color: var(--on-accent); opacity: .7; font-size: 1.125rem; line-height: 1; padding: 12px 12px; margin: -12px -12px -12px -8px; }
   .tag-pill button:hover { opacity: 1; }
-  .tag-pill.name-pill { text-transform: none; letter-spacing: 0.05em; font-size: 1rem; } /* names keep their case */
+  .tag-pill.name-pill { font-size: 1rem; }
+  /* A choice that is on: an ice ring, not ember (ember is for you and the one action) */
   .choice {
-    font-size: 0.6875rem; letter-spacing: 0.15em; text-transform: uppercase; padding: 7px 11px; border-radius: 10px; font-weight: 500;
+    font-size: 0.8125rem; letter-spacing: 0.02em; padding: 7px 12px; border-radius: 10px; font-weight: 500;
     background: var(--floe); color: var(--ink); box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), var(--lift-sm);
   }
-  .choice[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+  .choice[aria-pressed="true"], .chip.sel { background: var(--floe-hi); color: var(--ink-strong); box-shadow: inset 0 0 0 2px var(--ice); }
   .choices { display: flex; flex-wrap: wrap; gap: 8px; }
   .check { display: flex; gap: 10px; align-items: center; font-size: 0.875rem; color: var(--muted); }
-  .check input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  .check input { accent-color: var(--accent); width: 18px; height: 18px; flex: none; }
   .check a { color: inherit; text-underline-offset: 3px; }
   .handover { border: 1px solid var(--accent); border-radius: 12px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
 
@@ -244,12 +249,13 @@
   .btn.danger { background: #c0392b; color: #fff; box-shadow: none; }  /* ~5.4:1 */
   .btn.danger:hover { background: #a93226; }
   .btn.dim { opacity: .45; }
-  .ghost { font-size: 0.75rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); padding: 0 8px; height: 40px; white-space: nowrap; font-weight: 500; }
+  .ghost { font-size: 0.75rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); padding: 0 8px; height: 44px; white-space: nowrap; font-weight: 500; }
   .ghost:hover { color: var(--ink); }
   .ghost.accent { color: var(--accent); }
   .ghost.accent:hover { color: var(--accent-hover); }
   .ghost.danger { color: var(--danger); }
-  .ghost.done { color: var(--border); cursor: default; }
+  .ghost.done { cursor: default; display: inline-flex; align-items: center; }
+  .ghost.done:hover { color: var(--muted); }
   .ghost.first { padding-left: 0; }
 
   /* ── Tabs: on a baseline; the open one is taller and joins it ─────────── */
@@ -266,14 +272,21 @@
   }
   .badge { background: var(--accent); color: var(--on-accent); font-size: 0.6875rem; letter-spacing: 0; border-radius: 9px; padding: 0 7px; font-weight: 700; line-height: 18px; }
   .badge:empty { display: none; }
-  .note { font-size: 0.875rem; color: var(--ink); border-radius: 10px; padding: 8px 14px; margin: -12px 0 18px; background: var(--row); }
+  .note { font-size: 0.875rem; color: var(--ink); border-radius: 10px; padding: 8px 14px; background: var(--row); }
   .note:empty { display: none; }
-  .banner { display: flex; gap: 10px; align-items: center; padding: 10px 14px; font-size: 0.875rem; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--warn); background: var(--row); margin-bottom: 16px; flex-wrap: wrap; }
+  /* Feedback floats above the footer, so it never pushes the page down or covers the tabs */
+  .note.toast {
+    position: fixed; left: 16px; right: 16px; bottom: calc(40px + env(safe-area-inset-bottom, 0px)); z-index: 50;
+    width: fit-content; max-width: min(100% - 32px, 560px); margin: 0 auto; padding: 12px 18px; cursor: pointer;
+    background: var(--surface); color: var(--ink-strong); box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--border), var(--lift-hi);
+  }
+  .note.is-error { box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--warn), var(--lift-hi); }
+  .banner { display: flex; gap: 10px; align-items: center; padding: 10px 14px; font-size: 0.875rem; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--warn); background: var(--row); margin-bottom: 16px; flex-wrap: wrap; flex-shrink: 0; }
   .banner:empty { display: none; }
   .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 28px 0 14px; }
   .meta.first { margin-top: 0; }
   .meta .label { margin: 0; }
-  .meta .label em { font-style: normal; color: var(--msg-them); }
+  .meta .label em { font-style: normal; color: var(--ink-strong); font-weight: 700; }
   .tick { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
   .tick i { width: 36px; height: 1px; background: var(--border); position: relative; overflow: hidden; }
   .tick i::after { content: ''; position: absolute; inset: 0; background: var(--accent); transform-origin: left; animation: fill 5s linear infinite; }
@@ -282,19 +295,18 @@
   /* Interest chips, sized by how many people are online with them */
   .chips { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .chip {
-    display: inline-flex; align-items: baseline; gap: 8px; font-size: 0.75rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500;
+    display: inline-flex; align-items: baseline; gap: 8px; font-size: 0.875rem; letter-spacing: 0.02em; font-weight: 500;
     padding: 8px 13px; border-radius: 10px; background: var(--floe); color: var(--ink);
     box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--edge), var(--lift-sm); transition: background .6s;
   }
-  .chip:hover { box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--accent); }
-  .chip .n { font-size: 0.625rem; letter-spacing: 0.04em; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
-  .chip.z1 { font-size: 0.6875rem; }
-  .chip.z3 { font-size: 0.8125rem; }
-  .chip.z4 { font-size: 0.875rem; padding: 10px 15px; }
-  .chip.z5 { font-size: 0.9375rem; padding: 11px 17px; }
+  .chip:hover { box-shadow: inset 0 1px 0 var(--rim), 0 0 0 1px var(--ice); }
+  .chip .n { font-size: 0.75rem; letter-spacing: 0.02em; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .chip.z1 { font-size: 0.8125rem; }
+  .chip.z3 { font-size: 0.9375rem; }
+  .chip.z4 { font-size: 1rem; padding: 10px 15px; }
+  .chip.z5 { font-size: 1.0625rem; padding: 11px 17px; }
   .chip.mine { background: var(--floe-warm); box-shadow: inset 0 1px 0 var(--rim-warm), 0 0 0 1px var(--edge-warm), var(--lift-sm); }
-  .chip.sel { background: var(--accent); color: var(--on-accent); box-shadow: none; }
-  .chip.sel .n { color: var(--on-accent); opacity: .75; }
+  .chip.sel, .chip.sel:hover { background: var(--floe-hi); box-shadow: inset 0 0 0 2px var(--ice); }
   .chip.flash { background: var(--accent-soft); }
   .ai-card { border-radius: 14px; padding: 18px 20px 12px; margin-top: 28px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
   .ai-card b { font-weight: 700; letter-spacing: 0.2em; color: var(--ink-strong); margin-right: 10px; }
@@ -310,12 +322,14 @@
   .who .top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .who .u { color: var(--ink-strong); font-weight: 500; font-size: 1.0625rem; letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .who .g { font-size: 0.75rem; color: var(--muted); font-weight: 400; margin-left: 8px; letter-spacing: 0.05em; }
-  .who .shares { font-size: 0.625rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--msg-them); font-weight: 500; white-space: nowrap; }
-  .who .t { font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 500; line-height: 1.9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who .shares { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  /* Interests and status: plain text at a readable size, not small capitals */
+  .who .t { font-size: 0.875rem; letter-spacing: 0.01em; color: var(--muted); line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cards .who .t { white-space: normal; }
   .who .t b { color: var(--msg-them); font-weight: 700; }
   .who .t .on { color: var(--ok); } .who .t .recon { color: var(--warn); }
   .chatlist .shares { display: none; }
+  .who .t .pv { color: var(--ink); }  /* the last message, as it was written */
   .acts { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
   .cards .acts .ghost:last-child { padding-right: 0; }
 
@@ -333,6 +347,10 @@
   .message.mine { color: var(--ink); font-size: 1.0625rem; }
   .when { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
   .empty { padding: 4px 0 8px; font-size: 0.875rem; color: var(--muted); }
+  .empty-state { padding: 26px 26px 22px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .empty-state .serif { font-size: 1.25rem; color: var(--ink-strong); }
+  .empty-state p { font-size: 0.9375rem; color: var(--ink); max-width: 46em; }
+  .empty-state .ghost { padding-left: 0; }
   .switch { display: flex; gap: 14px; align-items: center; cursor: pointer; padding: 0 0 24px; }
   .switch input { position: absolute; opacity: 0; }
   .track { width: 38px; height: 22px; border-radius: 11px; box-shadow: inset 0 0 0 1px var(--border); position: relative; flex: none; transition: background .2s; }
@@ -356,12 +374,18 @@
   .chat-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .chat-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; flex-shrink: 0; }
   .chat-head .who .t { white-space: normal; }
-  .e2e { font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .e2e { color: var(--muted); display: flex; align-items: center; padding: 0 4px; }
+  #btn-back { width: 44px; padding: 0; font-size: 1rem; flex: none; margin-left: -8px; }
   #btn-focus { display: none; color: var(--ink); align-items: center; gap: 8px; }
   .ai-banner { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); font-size: 0.8125rem; line-height: 1.4; text-align: center; flex-shrink: 0; }
   .ai-banner strong { font-weight: 700; letter-spacing: 0.2em; margin-right: 8px; }
-  .chat-box { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 4px 16px; display: flex; flex-direction: column; scrollbar-width: none; }
-  .chat-box::-webkit-scrollbar { display: none; }
+  .chat-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+  .chat-box { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 6px 16px 4px; display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  /* Shown when something arrives while you're reading further up */
+  .jump {
+    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); height: 36px; padding: 0 16px; border-radius: 999px;
+    background: var(--accent); color: var(--on-accent); font-size: 0.8125rem; font-weight: 500; white-space: nowrap; box-shadow: var(--lift);
+  }
   /* Regular weight, roomy lines and at most ~65 characters per line: light text on dark
      strains the eyes when it is thin or runs long */
   .msg {
@@ -379,7 +403,8 @@
   .msg.waiting, .msg.failed { opacity: .55; }
   .msg.sending { animation: msg-dim .2s 1.2s forwards; } /* only noticeable if it takes a while */
   @keyframes msg-dim { to { opacity: .55; } }
-  .msg-status { display: block; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+  .msg-time { float: right; margin: 7px 0 0 14px; font-size: 0.6875rem; line-height: 1.6; letter-spacing: 0.02em; opacity: .7; font-variant-numeric: tabular-nums; }
+  .msg-status { display: block; clear: both; font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
   .msg.failed .msg-status { color: var(--danger); }
   .msg.system {
     align-self: center; text-align: center; max-width: 100%; margin: 0 0 8px; padding: 0; background: none; box-shadow: none;
@@ -451,7 +476,17 @@
     .e-head { grid-area: head; } .e-fields { grid-area: fields; } .e-go { grid-area: go; } .e-aside { grid-area: aside; padding-top: 40px; }
     .disc { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 56px; align-items: start; }
     .req-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 48px; align-items: start; }
-    .req-cols .meta.first { margin-top: 0; }
+    .req-cols .meta.first { margin-top: 0; flex-direction: column; gap: 4px; } /* both headings the same height, so the cards line up */
+    /* Short screens: tighten the entry form so "Go online" is on screen without scrolling */
+    @media (max-height: 900px) {
+      h1.hero { font-size: 3.5rem; }
+      p.sub { font-size: 1.125rem; }
+      .e-head { gap: 6px; }
+      .entry { row-gap: 14px; }
+      .e-fields { gap: 16px; padding: 20px 26px 22px; }
+      .e-go { gap: 12px; }
+      main { padding-top: 18px; }
+    }
     .split { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 48px; align-items: start; }
     .split-empty { display: block; padding-top: 40px; text-align: center; color: var(--muted); font-size: 1.0625rem; }
     /* The chat opens beside the list; focus hides the list and the tabs */
@@ -463,9 +498,15 @@
   @media (max-width: 959px) {
     .req-cols > div + div .meta.first { margin-top: 28px; }
     body.is-chat .tabs { display: none; }
+    .disc-side { margin-bottom: 28px; }
   }
   @media (max-width: 480px) {
     header { padding: 16px 16px 0; }
+    /* Online: your name and connection dot get a line of their own under the logo */
+    body.online header { flex-wrap: wrap; }
+    body.online .header-right { display: contents; }
+    body.online .logo { margin-right: auto; }
+    body.online .tagline { display: block; order: 3; flex-basis: 100%; }
     .logo { letter-spacing: 0.2em; font-size: 0.875rem; }
     .beta { margin-left: 8px; padding: 2px 6px 1px; font-size: 0.5625rem; letter-spacing: 0.16em; }
     .tagline { display: none; }
@@ -478,7 +519,6 @@
     .cards { grid-template-columns: minmax(0, 1fr); }
     .req { padding: 18px 18px 14px; }
     .msg { max-width: 88%; }
-    .e2e span { display: none; }
   }
 </style>
 </head>
@@ -497,10 +537,12 @@
   <div class="card">
 
     <div class="tabs" id="tabs" role="tablist" hidden>
-      <button class="tab" role="tab" id="tab-discover" aria-selected="true">discover</button>
-      <button class="tab" role="tab" id="tab-requests" aria-selected="false">requests <span class="badge" id="badge-requests"></span></button>
-      <button class="tab" role="tab" id="tab-messages" aria-selected="false">messages <span class="badge" id="badge-messages"></span></button>
+      <button class="tab" role="tab" id="tab-discover" aria-controls="panel-discover" aria-selected="true">discover</button>
+      <button class="tab" role="tab" id="tab-requests" aria-controls="panel-requests" aria-selected="false" tabindex="-1">requests <span class="badge" id="badge-requests"></span></button>
+      <button class="tab" role="tab" id="tab-messages" aria-controls="panel-messages" aria-selected="false" tabindex="-1">messages <span class="badge" id="badge-messages"></span></button>
     </div>
+
+    <div class="banner" id="banner" role="status"></div>
 
     <!-- ENTRY: the whole profile on one page -->
     <section id="view-entry" class="entry fade">
@@ -536,6 +578,16 @@
           <p class="err" id="err-tags"></p>
         </div>
       </div>
+      <div class="e-go">
+        <div>
+          <label class="check" for="adult"><input type="checkbox" id="adult"><span>18+ only. I confirm I'm an adult and agree to the <a href="/terms">Terms</a>.</span></label>
+          <p class="err" id="err-adult"></p>
+        </div>
+        <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <div><button class="btn" id="btn-go">Go online →</button></div>
+        <p class="err" id="err-go"></p>
+        <p class="trust"><span class="nb">no accounts</span> &nbsp;·&nbsp; <span class="nb">no storage</span> &nbsp;·&nbsp; <span class="nb">no ads</span> &nbsp;·&nbsp; <span class="nb">end-to-end encrypted</span></p>
+      </div>
       <div class="e-aside">
         <div>
           <span class="label">how others see you</span>
@@ -554,24 +606,12 @@
           </ul>
         </div>
       </div>
-      <div class="e-go">
-        <div>
-          <p class="check"><label class="check" for="adult"><input type="checkbox" id="adult"> 18+ only. I confirm I'm an adult and agree to the</label>&nbsp;<a href="/terms">Terms</a>.</p>
-          <p class="err" id="err-adult"></p>
-        </div>
-        <input type="text" name="__honeypot__" id="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <div><button class="btn" id="btn-go">Go online →</button></div>
-        <p class="err" id="err-go"></p>
-        <p class="trust">no&nbsp;accounts &nbsp;·&nbsp; no&nbsp;storage &nbsp;·&nbsp; no&nbsp;ads &nbsp;·&nbsp; end-to-end&nbsp;encrypted</p>
-      </div>
     </section>
 
     <!-- LIVE: discover, requests, messages -->
     <section id="view-main" hidden>
-      <div class="banner" id="banner" role="status"></div>
-      <div class="note" id="note" role="status" aria-live="polite"></div>
 
-      <div id="panel-discover" class="disc">
+      <div id="panel-discover" class="disc" role="tabpanel" aria-labelledby="tab-discover">
         <div class="disc-side">
           <div class="meta first"><span class="label">your interests · online now</span><span class="tick"><i></i>live</span></div>
           <div class="chips" id="chips-mine"></div>
@@ -591,8 +631,8 @@
           <div id="browse"></div>
         </div>
       </div>
-      <div id="panel-requests" hidden></div>
-      <div id="panel-messages" hidden></div>
+      <div id="panel-requests" role="tabpanel" aria-labelledby="tab-requests" hidden></div>
+      <div id="panel-messages" role="tabpanel" aria-labelledby="tab-messages" hidden></div>
     </section>
 
     <!-- CHAT: beside the chat list on wide screens, alone on phones and in focus -->
@@ -602,11 +642,14 @@
         <div class="chat-head floe hi">
           <button class="ghost first" id="btn-back" aria-label="Back to messages">←</button>
           <div class="who"><div class="u" id="chat-name"></div><div class="t" id="chat-status"></div></div>
-          <span class="e2e"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>end-to-end encrypted</span></span>
+          <span class="e2e" role="img" aria-label="End-to-end encrypted" title="End-to-end encrypted"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
           <button class="ghost" id="btn-focus" title="Hide the chat list and tabs"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span id="focus-label">focus</span></button>
         </div>
         <div class="ai-banner" id="ai-banner" role="note" hidden><strong>AI</strong>You are chatting with an AI model run by Emberline, not a person.</div>
-        <div class="chat-box" id="chat-box"></div>
+        <div class="chat-wrap">
+          <div class="chat-box" id="chat-box" tabindex="0" role="log" aria-label="Messages"></div>
+          <button type="button" class="jump" id="btn-jump" hidden>new messages ↓</button>
+        </div>
         <div class="waterline"></div>
         <div class="chat-input-row" id="chat-input-row">
           <textarea id="chat-input" placeholder="write" maxlength="300" autocomplete="off" rows="1" aria-label="Message"></textarea>
@@ -635,6 +678,8 @@
 
   </div>
 </main>
+
+<div class="note toast" id="note" role="status" aria-live="polite" title="dismiss"></div>
 
 <footer>__BUILD_FOOTER__<a href="#" id="install-link">install</a><span id="install-sep"> &nbsp;·&nbsp; </span><a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="/terms">Terms</a></footer>
 
@@ -705,9 +750,9 @@
   </div>
 </div>
 
-<div id="install-ios" class="modal" hidden>
+<div id="install-ios" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="install-title">
   <div class="modal-box install-box">
-    <h3 class="modal-title">Install on iOS</h3>
+    <h3 class="modal-title" id="install-title">Install on iOS</h3>
     <p>Tap the <strong>Share</strong> button, then choose <strong>Add to Home Screen</strong>.</p>
     <button class="ghost" id="btn-install-close">close</button>
   </div>

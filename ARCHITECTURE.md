@@ -28,7 +28,7 @@ User → emberline.ch → Swiss VPS (Caddy TLS, logs disabled) → WireGuard tun
 
 Browser
   │  WebSocket (wss://)                HTTP REST
-  │  E2EE via NaCl box                /challenge  /count  /report
+  │  E2EE via NaCl box                /challenge  /count
   ▼
 server.js  (Node.js · Express + ws, inside Docker container)
   ├── waitingPool   Map<keyword, Set<ws>>
@@ -341,7 +341,6 @@ Design constraints, in order: **the user must always know**, then **nobody gets 
 |---|---|---|---|
 | `GET` | `/challenge` | Issue PoW token | 60/hour/IP |
 | `GET` | `/count` | Live user count | Static budget |
-| `POST` | `/report` | Submit abuse report | 10/hour/IP |
 | `GET` | `/privacy` | Privacy policy page | API budget |
 | `GET` | `/terms` | Terms of service page | API budget |
 | `GET` | `/*` | Static files (incl. `.json`) | Static budget |

@@ -54,7 +54,7 @@ If you intend to publish your own analysis after our fix, please coordinate with
 - Source code published in this repository on the default branch
 - The server-side matching logic, proof-of-work verification, rate limiting, and end-to-end encryption handshake
 - Client-side cryptographic operations and message handling
-- The `/privacy`, `/terms`, `/challenge`, `/count`, and `/report` endpoints
+- The `/privacy`, `/terms`, `/challenge` and `/count` endpoints
 
 **Out of scope:**
 

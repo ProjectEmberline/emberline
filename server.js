@@ -77,7 +77,7 @@ const server = http.createServer(app);
 
 const MAX_CONNS_PER_IP        = envInt('MAX_CONNS_PER_IP', 20); // concurrent WS connections per IP
 const MAX_WS_CONNECTS_PER_MIN = 20;  // new WS connections per IP per minute
-const MAX_HTTP_API_RPM        = 60;  // /challenge, /count, /report per IP per minute
+const MAX_HTTP_API_RPM        = 60;  // /challenge and the policy pages, per IP per minute
 const MAX_HTTP_STATIC_RPM     = 300; // static assets per IP per minute
 
 const MAX_REPORTS_PER_IP      = 10;  // abuse reports per IP per hour
@@ -157,6 +157,7 @@ const CIPHERTEXT_RE           = /^[A-Za-z0-9+/]+={0,2}$/;
 const NONCE_RE                = /^[A-Za-z0-9+/]{32}$/; // 24-byte NaCl nonce
 
 const HONEYPOT_KEYWORD = '__honeypot__';
+const VALID_REASONS    = new Set(['csam', 'harassment', 'illegal', 'spam']); // report categories
 
 // Allowed WebSocket origins — set to your production domain(s).
 // null/undefined origin (non-browser clients) is allowed so CLI tools still work.
@@ -650,8 +651,11 @@ function topInterests(n) {
 }
 function sendCounts(p, top, force) {
   const want = new Set([...p.interests, ...p.watch.interests, ...top]);
+  // Other people only: on your own interests you aren't counted, so the chip
+  // agrees with the search results ("0" when nobody else is there)
+  const mine = new Set(p.interests);
   const buckets = {};
-  for (const t of want) buckets[t] = bucket(byInterest.get(t)?.size || 0);
+  for (const t of want) buckets[t] = bucket((byInterest.get(t)?.size || 0) - (mine.has(t) ? 1 : 0));
   const key = JSON.stringify([top, buckets]);
   if (!force && key === p.watch.last) return;
   p.watch.last = key;
@@ -784,7 +788,7 @@ function validCiphertext({ ciphertext, nonce }, max) {
 function verifyPow(ws, { token, nonce }) {
   const challenge = typeof token === 'string' && challenges.get(token);
   if (!challenge || Date.now() > challenge.expiresAt) {
-    send(ws, { type: 'error', code: 'challenge_expired' });
+    send(ws, { type: 'error', code: 'challenge_expired', re: 'profile_create' });
     return false;
   }
   // Reject if the challenge was issued to a different IP
@@ -811,11 +815,14 @@ function verifyPow(ws, { token, nonce }) {
   return true;
 }
 
-// Frames that don't count as the person doing something (for the idle timer)
+// Frames that don't count as the person doing something (for the idle timer).
+// So is a search the page repeats by itself to keep its results current (auto).
 const PASSIVE_FRAMES = new Set(['chat_typing', 'counts_watch']);
+const isPassive = msg => PASSIVE_FRAMES.has(msg.type) || (msg.type === 'search' && msg.auto === true);
 
 function handleHumanFrame(ws, msg) {
-  const err = (code, extra) => send(ws, { type: 'error', code, ...extra });
+  // `re` names the frame an error answers, so the client never has to guess
+  const err = (code, extra) => send(ws, { type: 'error', code, re: msg.type, ...extra });
 
   // ── Before a profile exists ────────────────────────────────────────────────
   if (msg.type === 'profile_create') {
@@ -894,7 +901,7 @@ function handleHumanFrame(ws, msg) {
 
   const me = ws._profile && profiles.get(ws._profile);
   if (!me || me.ws !== ws) return;
-  if (!PASSIVE_FRAMES.has(msg.type)) { me.lastActiveAt = Date.now(); me.idleWarned = false; }
+  if (!isPassive(msg)) { me.lastActiveAt = Date.now(); me.idleWarned = false; }
 
   switch (msg.type) {
 
@@ -1216,43 +1223,6 @@ app.get('/count', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REST: /report
-// ─────────────────────────────────────────────────────────────────────────────
-
-app.use(express.json({ limit: '1kb' }));
-
-const VALID_REASONS = new Set(['csam', 'harassment', 'illegal', 'spam']);
-
-app.post('/report', (req, res) => {
-  const ip = getIP(req);
-  if (rateExceeded(reportThrottle, ip, MAX_REPORTS_PER_IP, 3_600_000)) {
-    return res.status(429).json({ error: 'too many reports, please try again later' });
-  }
-
-  const { reason, details } = req.body || {};
-  if (!reason || !VALID_REASONS.has(reason)) {
-    return res.status(400).json({ error: 'invalid reason' });
-  }
-
-  const cleanDetails = typeof details === 'string'
-    ? details.replace(/[<>]/g, '').trim().slice(0, 500)
-    : '';
-
-  const entry = JSON.stringify({
-    ts:      new Date().toISOString(),
-    reason:  reason.slice(0, 20),
-    details: cleanDetails
-    // deliberately: no IP, no room ID, no user identity
-  }) + '\n';
-
-  fs.appendFile(REPORTS_LOG, entry, err => {
-    if (err) console.error('[report] failed to write log:', err.message);
-  });
-
-  res.json({ ok: true });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // REST: /privacy
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1262,23 +1232,35 @@ app.post('/report', (req, res) => {
 const POLICY_EFFECTIVE_DATE = '27 September 2026';
 const TERMS_EFFECTIVE_DATE  = '27 September 2026';
 
+// One stylesheet for both policy pages: the site's colours, light or dark
+// following the reader's system setting (these pages run no script).
+const POLICY_STYLE = `
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { color-scheme: dark; --paper: #060d17; --ink: #dbe9f2; --ink-strong: #f2f8fc; --muted: #8fabbe; --border: #3a5a74; --accent: #e87834; --notice: #ffb070; }
+  @media (prefers-color-scheme: light) {
+    :root { color-scheme: light; --paper: #f2f7fa; --ink: #1c3242; --ink-strong: #12293a; --muted: #5b7587; --border: #9fbccd; --accent: #b8531a; --notice: #9a4413; }
+  }
+  body { font-family: 'Manrope', system-ui, sans-serif; font-weight: 400; background: var(--paper); color: var(--ink); max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem; line-height: 1.7; }
+  h1, h2 { font-family: 'Manrope', system-ui, sans-serif; font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase; color: var(--ink-strong); }
+  h1 { font-size: 2rem; margin-bottom: 0.4rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }
+  p { margin-bottom: 1rem; } ul { padding-left: 1.5rem; margin-bottom: 1rem; }
+  li { margin-bottom: 0.4rem; } a { color: var(--accent); }
+  .date { font-size: 0.85rem; color: var(--muted); margin-bottom: 2rem; }
+  .notice { border-left: 2px solid var(--accent); padding-left: 1rem; margin: 1.5rem 0; }
+  .notice p { color: var(--notice); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+  .small { font-size: 0.85rem; color: var(--muted); }
+`;
+
 const PRIVACY_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
 <title>Privacy Policy — Emberline</title>
 <link href="/fonts/fonts.css" rel="stylesheet">
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Manrope', system-ui, sans-serif; font-weight: 300; background: #070c14; color: #dbe9f2; max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem; line-height: 1.7; }
-  h1, h2 { font-family: 'Manrope', system-ui, sans-serif; font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase; color: #f2f8fc; }
-  h1 { font-size: 2rem; margin-bottom: 0.4rem; }
-  h2 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }
-  p { margin-bottom: 1rem; } a { color: #e87834; }
-  .date { font-size: 0.85rem; color: #8fabbe; margin-bottom: 2rem; }
-  hr { border: none; border-top: 1px solid #3a5a74; margin: 2rem 0; }
-  .small { font-size: 0.85rem; }
-</style>
+<style>${POLICY_STYLE}</style>
 </head>
 <body>
 <h1>Privacy Policy</h1>
@@ -1325,22 +1307,10 @@ const TERMS_HTML = allowStyleBlocks(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
 <title>Terms of Service — Emberline</title>
 <link href="/fonts/fonts.css" rel="stylesheet">
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Manrope', system-ui, sans-serif; font-weight: 300; background: #070c14; color: #dbe9f2; max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem; line-height: 1.7; }
-  h1, h2 { font-family: 'Manrope', system-ui, sans-serif; font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase; color: #f2f8fc; }
-  h1 { font-size: 2rem; margin-bottom: 0.4rem; }
-  h2 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }
-  p { margin-bottom: 1rem; } ul { padding-left: 1.5rem; margin-bottom: 1rem; }
-  li { margin-bottom: 0.4rem; } a { color: #e87834; }
-  .date { font-size: 0.85rem; color: #8fabbe; margin-bottom: 2rem; }
-  .notice { border-left: 2px solid #e87834; padding-left: 1rem; margin: 1.5rem 0; }
-  .notice p { color: #ffb070; }
-  hr { border: none; border-top: 1px solid #3a5a74; margin: 2rem 0; }
-  .small { font-size: 0.85rem; color: #8fabbe; }
-</style>
+<style>${POLICY_STYLE}</style>
 </head>
 <body>
 <h1>Terms of Service</h1>
@@ -1459,7 +1429,7 @@ app.use(express.static(PUBLIC_DIR, {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Errors — replaces Express's default handler, which logs every error's stack
-// (a malformed /report body included) and, outside production, sends it back.
+// and, outside production, sends it back.
 // Client errors are answered and never logged; server bugs log the stack only.
 // ─────────────────────────────────────────────────────────────────────────────
 

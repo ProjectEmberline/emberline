@@ -24,7 +24,7 @@ We believe in your right to privacy.
 
 ## How it works
 
-A Node.js process handles WebSocket connections and a small HTTP surface (`/challenge`, `/count`, `/report`, plus static files and the policy pages). Clients connect, solve a proof-of-work challenge and create a profile that lives only in server memory. Others find it by interest, and send an end-to-end encrypted request; once it's accepted, the two exchange encrypted messages through the server, which cannot read them. Public keys are part of the profiles, so the server never sees plaintext. The server keeps in-memory Maps for profiles, requests and chats, and writes nothing durable except abuse-prevention logs and reports. See [PROFILES.md](./PROFILES.md) for the protocol and limits.
+A Node.js process handles WebSocket connections and a small HTTP surface (`/challenge`, `/count`, plus static files and the policy pages). Clients connect, solve a proof-of-work challenge and create a profile that lives only in server memory. Others find it by interest, and send an end-to-end encrypted request; once it's accepted, the two exchange encrypted messages through the server, which cannot read them. Public keys are part of the profiles, so the server never sees plaintext. The server keeps in-memory Maps for profiles, requests and chats, and writes nothing durable except abuse-prevention logs and reports. See [PROFILES.md](./PROFILES.md) for the protocol and limits.
 
 The stack is intentionally small: Node.js, Express, `ws`, TweetNaCl on the client. No framework, no database, no build step. The entire client is one HTML file and one JavaScript file.
 
@@ -54,7 +54,7 @@ node server.js
 
 The server listens on port 3000. Put HTTPS in front of it, update `ALLOWED_WS_ORIGINS` in `server.js` to your domain, and you are running.
 
-`npm test` starts a throwaway server and runs the end-to-end tests in `test/` (static-file exposure, CSP, client-IP handling, message relay, rate limits, bans, AI chat). CI runs them on every push.
+`npm test` starts a throwaway server and runs the end-to-end tests in `test/` (static-file exposure, CSP, client-IP handling, message relay, rate limits, bans, AI chat, and a whole visit through the real page in jsdom). CI runs them on every push.
 
 Only the `public/` directory is served over HTTP. Configuration is via environment variables:
 
